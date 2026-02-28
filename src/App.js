@@ -142,7 +142,7 @@ function AdminLogin(props) {
 function AdminChat(props) {
   var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas;
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Ver contraseñas [P|SI]\n• Asignar contraseñas (genera pw a quienes no tienen)\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -170,7 +170,7 @@ function AdminChat(props) {
     // VER PROFES
     if (t.includes("ver profe") || t === "profes") {
       if (!profes.length) return "No hay profes cargadas.";
-      return "✦ Profesoras:\n\n" + profes.map(function (p) { return "• " + p.nombre + " — " + p.sede + (p.esEncargada ? " (Encargada)" : "") + "\n  Horarios: " + p.horarios.map(function (h) { return h.replace("-", " ") }).join(", ") }).join("\n")
+      return "✦ Profesoras:\n\n" + profes.map(function (p) { return "• " + p.nombre + " — " + p.sede + (p.esEncargada ? " (Encargada)" : "") + "\n  Horarios: " + p.horarios.map(function (h) { return h.replace("-", " ") }).join(", ") + "\n  🔑 " + (p.pw || "sin pw") }).join("\n")
     }
 
     // ALTA PROFE
@@ -200,6 +200,51 @@ function AdminChat(props) {
       return "✓ " + pr.nombre + " dada de baja."
     }
 
+    // ASIGNAR CONTRASEÑAS (bulk: genera pw a quienes no tienen)
+    if (t.startsWith("asignar contra") || t.startsWith("asignar pw") || t.startsWith("generar contra") || t.startsWith("generar pw")) {
+      var sinPw = als.filter(function (a) { return !a.pw });
+      if (!sinPw.length) return "✓ Todos los alumnos ya tienen contraseña.";
+      var results = [];
+      for (var si = 0; si < sinPw.length; si++) {
+        var al = sinPw[si];
+        var newPw = genPw("eves");
+        await supa("alumnos", "PATCH", "?id=eq." + al.id, { password: newPw });
+        results.push("• " + al.nombre + " → 🔑 " + newPw);
+      }
+      await refreshData();
+      return "✓ Contraseñas asignadas (" + results.length + "):\n\n" + results.join("\n");
+    }
+
+    // VER CONTRASEÑAS
+    if (t.includes("ver contra") || t.includes("ver pw") || t.includes("contraseñas")) {
+      var filtered = filterBySede(als, sedeFilter);
+      if (!filtered.length) return "No hay alumnos" + sedeLabel + ".";
+      return "✦ Contraseñas" + sedeLabel + ":\n\n" + filtered.map(function (a) {
+        return "• " + a.nombre + " — " + a.sede + " — 🔑 " + (a.pw || "⚠ sin contraseña")
+      }).join("\n") + "\n\nTotal: " + filtered.length;
+    }
+
+    // RESETEAR PW
+    if (t.startsWith("resetear pw") || t.startsWith("resetear contra") || t.startsWith("reset pw")) {
+      var n2 = txt.replace(/resetear\s*(pw|contra(seña)?)\s*:?\s*/i, "").replace(/reset\s*pw\s*:?\s*/i, "").trim();
+      if (!n2) return "Formato: Resetear pw: Nombre";
+      var idx2 = findA(n2); if (idx2 === -1) return "✗ No encontré ese nombre.";
+      var al2 = als[idx2]; var newPw2 = genPw("eves");
+      await supa("alumnos", "PATCH", "?id=eq." + al2.id, { password: newPw2 });
+      await refreshData();
+      return "✓ Nueva contraseña para " + al2.nombre + ":\n🔑 " + newPw2;
+    }
+
+    // CONTRASEÑA DE UN ALUMNO
+    if (t.startsWith("contraseña") || t.startsWith("pw ")) {
+      var n3 = txt.replace(/^(contraseña|pw)\s*:?\s*/i, "").trim();
+      if (!n3) return "Formato: Contraseña: Nombre";
+      var idx3 = findA(n3); if (idx3 === -1) return "✗ No encontré ese nombre.";
+      var al3 = als[idx3];
+      if (!al3.pw) return "⚠ " + al3.nombre + " no tiene contraseña. Usá: Resetear pw: " + al3.nombre;
+      return "✦ " + al3.nombre + "\n🔑 Contraseña: " + al3.pw;
+    }
+
     // PAGOS PENDIENTES
     if (t.includes("pagos pendiente") || t.includes("pago pendiente")) {
       var now2 = new Date(); var mk = now2.getFullYear() + "-" + now2.getMonth();
@@ -217,25 +262,25 @@ function AdminChat(props) {
       var ok = [], nf = [];
       for (var ni = 0; ni < nombres.length; ni++) {
         var nom2 = nombres[ni];
-        var idx2 = als.findIndex(function (a) { return a.nombre.toLowerCase().includes(nom2.toLowerCase()) });
-        if (idx2 === -1) { nf.push(nom2); continue }
-        var al = als[idx2];
-        await supa("meses_pagados", "POST", "", { alumno_id: al.id, mes_key: parsed.key });
-        await supa("historial", "POST", "", { alumno_id: al.id, accion: "💳 " + MN[parsed.month] + " " + parsed.year });
-        ok.push(al.nombre);
+        var idx4 = als.findIndex(function (a) { return a.nombre.toLowerCase().includes(nom2.toLowerCase()) });
+        if (idx4 === -1) { nf.push(nom2); continue }
+        var al4 = als[idx4];
+        await supa("meses_pagados", "POST", "", { alumno_id: al4.id, mes_key: parsed.key });
+        await supa("historial", "POST", "", { alumno_id: al4.id, accion: "💳 " + MN[parsed.month] + " " + parsed.year });
+        ok.push(al4.nombre);
       }
       await refreshData();
       var r2 = "✦ Pago masivo " + MN[parsed.month] + " " + parsed.year + ":\n\n";
-      if (ok.length) r2 += "✓ Registrados (" + ok.length + "):\n" + ok.map(function (n2) { return "  • " + n2 }).join("\n") + "\n";
-      if (nf.length) r2 += "\n✗ No encontrados (" + nf.length + "):\n" + nf.map(function (n2) { return "  • " + n2 }).join("\n");
+      if (ok.length) r2 += "✓ Registrados (" + ok.length + "):\n" + ok.map(function (n4) { return "  • " + n4 }).join("\n") + "\n";
+      if (nf.length) r2 += "\n✗ No encontrados (" + nf.length + "):\n" + nf.map(function (n4) { return "  • " + n4 }).join("\n");
       return r2
     }
 
     // VER ALUMNOS
     if (t.includes("ver alumno") || t === "alumnos" || t === "lista") {
-      var filtered = filterBySede(als, sedeFilter);
-      if (!filtered.length) return "No hay alumnos" + sedeLabel + ".";
-      return "✦ Alumnos" + sedeLabel + ":\n\n" + filtered.map(function (a) {
+      var filtered2 = filterBySede(als, sedeFilter);
+      if (!filtered2.length) return "No hay alumnos" + sedeLabel + ".";
+      return "✦ Alumnos" + sedeLabel + ":\n\n" + filtered2.map(function (a) {
         var meses = Object.keys(a.mp || {}).map(function (k) { return MN[parseInt(k.split("-")[1])] }).join(", ") || "—";
         return "• " + a.nombre + " — " + a.sede + " — " + a.turno.dia + " " + a.turno.hora + " — Pagó: " + meses
       }).join("\n")
@@ -266,25 +311,26 @@ function AdminChat(props) {
 
     // BAJA ALUMNO
     if (t.startsWith("baja") && !t.startsWith("baja profe")) {
-      var n3 = txt.replace(/baja\s*:?\s*/i, "").trim(); if (!n3) return "Formato: Baja: Nombre";
-      var idx3 = findA(n3); if (idx3 === -1) return "✗ No encontré ese nombre.";
-      var al3 = als[idx3];
-      await supa("alumnos", "PATCH", "?id=eq." + al3.id, { estado: "baja" });
-      await supa("historial", "POST", "", { alumno_id: al3.id, accion: "Baja" });
+      var n5 = txt.replace(/baja\s*:?\s*/i, "").trim(); if (!n5) return "Formato: Baja: Nombre";
+      var idx5 = findA(n5); if (idx5 === -1) return "✗ No encontré ese nombre.";
+      var al5 = als[idx5];
+      await supa("alumnos", "PATCH", "?id=eq." + al5.id, { estado: "baja" });
+      await supa("historial", "POST", "", { alumno_id: al5.id, accion: "Baja" });
       await refreshData();
-      return "✓ " + al3.nombre + " dado de baja."
+      return "✓ " + al5.nombre + " dado de baja."
     }
 
     // CONSULTA
     if (t.startsWith("consulta")) {
-      var n4 = txt.replace(/consulta\s*:?\s*/i, "").trim(); if (!n4) return "Formato: Consulta: Nombre";
-      var idx4 = findA(n4); if (idx4 === -1) return "✗ No encontré ese nombre."; var a4 = als[idx4];
-      var meses4 = Object.keys(a4.mp || {});
-      var r4 = "✦ " + a4.nombre + "\n📍 " + a4.sede + " · " + a4.turno.dia + " " + a4.turno.hora;
+      var n6 = txt.replace(/consulta\s*:?\s*/i, "").trim(); if (!n6) return "Formato: Consulta: Nombre";
+      var idx6 = findA(n6); if (idx6 === -1) return "✗ No encontré ese nombre."; var a6 = als[idx6];
+      var meses4 = Object.keys(a6.mp || {});
+      var r4 = "✦ " + a6.nombre + "\n📍 " + a6.sede + " · " + a6.turno.dia + " " + a6.turno.hora;
+      r4 += "\n🔑 Contraseña: " + (a6.pw || "sin pw");
       r4 += "\n💳 Pagó: " + (meses4.length ? meses4.map(function (k) { var p = k.split("-"); return MN[parseInt(p[1])] + " " + p[0] }).join(", ") : "—");
-      r4 += "\n🎁 Regalo: " + (a4.reg || 0);
+      r4 += "\n🎁 Regalo: " + (a6.reg || 0);
       meses4.forEach(function (mk3) {
-        var stats = getMonthStats(a4, mk3); var p = mk3.split("-").map(Number);
+        var stats = getMonthStats(a6, mk3); var p = mk3.split("-").map(Number);
         r4 += "\n\n📅 " + MN[p[1]] + " " + p[0] + ":";
         r4 += "\n  Clases en mes: " + stats.totalInMonth + (stats.is5 ? " (5ta regalo)" : "");
         r4 += "\n  Cancelaciones: " + stats.cancTotal + (stats.cancSinRecup > 0 ? " (" + stats.cancSinRecup + " sin recup)" : "");
@@ -297,13 +343,13 @@ function AdminChat(props) {
 
     // CLASE REGALO
     if (t.includes("clase regalo") || t.includes("regalar clase")) {
-      var n5 = txt.replace(/clase\s*(de\s*)?regalo\s*:?\s*/i, "").replace(/regalar\s*clase\s*:?\s*/i, "").trim();
-      if (!n5) return "Formato: Clase regalo: Nombre"; var idx5 = findA(n5); if (idx5 === -1) return "✗ No encontré ese nombre.";
-      var al5 = als[idx5];
-      await supa("alumnos", "PATCH", "?id=eq." + al5.id, { clase_regalo: (al5.reg || 0) + 1 });
-      await supa("historial", "POST", "", { alumno_id: al5.id, accion: "🎁 Regalo" });
+      var n7 = txt.replace(/clase\s*(de\s*)?regalo\s*:?\s*/i, "").replace(/regalar\s*clase\s*:?\s*/i, "").trim();
+      if (!n7) return "Formato: Clase regalo: Nombre"; var idx7 = findA(n7); if (idx7 === -1) return "✗ No encontré ese nombre.";
+      var al7 = als[idx7];
+      await supa("alumnos", "PATCH", "?id=eq." + al7.id, { clase_regalo: (al7.reg || 0) + 1 });
+      await supa("historial", "POST", "", { alumno_id: al7.id, accion: "🎁 Regalo" });
       await refreshData();
-      return "✓ Regalo para " + al5.nombre
+      return "✓ Regalo para " + al7.nombre
     }
 
     // ALTA ALUMNO
@@ -336,16 +382,16 @@ function AdminChat(props) {
       var rest = match[2].trim(); var mesM = rest.match(/\(([^)]+)\)/);
       if (!mesM) return "Incluí el mes entre paréntesis.";
       var parsed2 = parseMes(mesM[1]); if (!parsed2) return "No entendí el mes.";
-      var n6 = rest.replace(/\([^)]+\)/, "").trim(); var idx6 = findA(n6);
-      if (idx6 === -1) return "✗ No encontré ese nombre."; var al6 = als[idx6];
-      var tc = classesInMonth(al6.turno.dia, al6.turno.hora, parsed2.month, parsed2.year).length;
-      await supa("meses_pagados", "POST", "", { alumno_id: al6.id, mes_key: parsed2.key });
-      await supa("historial", "POST", "", { alumno_id: al6.id, accion: "💳 " + MN[parsed2.month] + " " + parsed2.year });
+      var n8 = rest.replace(/\([^)]+\)/, "").trim(); var idx8 = findA(n8);
+      if (idx8 === -1) return "✗ No encontré ese nombre."; var al8 = als[idx8];
+      var tc = classesInMonth(al8.turno.dia, al8.turno.hora, parsed2.month, parsed2.year).length;
+      await supa("meses_pagados", "POST", "", { alumno_id: al8.id, mes_key: parsed2.key });
+      await supa("historial", "POST", "", { alumno_id: al8.id, accion: "💳 " + MN[parsed2.month] + " " + parsed2.year });
       await refreshData();
-      return "✓ " + al6.nombre + " — " + MN[parsed2.month] + " " + parsed2.year + " (" + tc + " clases" + (tc === 5 ? " — 5ta regalo" : "") + ")\nDerecho a " + CLASES_BASE + " clases efectivas."
+      return "✓ " + al8.nombre + " — " + MN[parsed2.month] + " " + parsed2.year + " (" + tc + " clases" + (tc === 5 ? " — 5ta regalo" : "") + ")\nDerecho a " + CLASES_BASE + " clases efectivas."
     }
 
-    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones"
+    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, asignar contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones"
   }
 
   async function send() {
@@ -374,35 +420,21 @@ function AdminChat(props) {
 // ====== LOGIN GENERICO (con Supabase) ======
 function GenericLogin(props) {
   var table = props.table, onLogin = props.onLogin, subtitle = props.subtitle, skipPw = props.skipPw, refreshData = props.refreshData;
-  var _step = useState("login"), step = _step[0], setStep = _step[1];
   var _nom = useState(""), nom = _nom[0], setNom = _nom[1];
   var _pw = useState(""), pw = _pw[0], setPw = _pw[1];
-  var _pw2 = useState(""), pw2 = _pw2[0], setPw2 = _pw2[1];
   var _err = useState(""), err = _err[0], setErr = _err[1];
-  var _found = useState(null), found = _found[0], setFound = _found[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
 
   async function doLogin() {
     setErr(""); setBusy(true);
-    var col = table === "profesoras" ? "nombre" : "nombre";
     var rows = await supa(table, "GET", "?nombre=ilike." + encodeURIComponent(nom.trim()) + (table === "alumnos" ? "&estado=eq.activo" : ""));
     setBusy(false);
     if (!rows || rows.length === 0) { setErr("No encontramos ese nombre."); return }
     var item = rows[0];
     if (skipPw) { onLogin(item); return }
-    if (!item.password) { setFound(item); setStep("setup"); setPw(""); setPw2(""); return }
+    if (!item.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
     if (item.password !== pw) { setErr("Contraseña incorrecta."); return }
     onLogin(item);
-  }
-
-  async function doSetup() {
-    setErr(""); if (pw.length < 4) { setErr("Mínimo 4 caracteres."); return }
-    if (pw !== pw2) { setErr("No coinciden."); return }
-    setBusy(true);
-    await supa(table, "PATCH", "?id=eq." + found.id, { password: pw });
-    setBusy(false);
-    if (refreshData) await refreshData();
-    onLogin(Object.assign({}, found, { password: pw }));
   }
 
   var iStyle = { width: "100%", padding: "12px 16px", borderRadius: 10, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, background: white, outline: "none", boxSizing: "border-box" };
@@ -414,29 +446,15 @@ function GenericLogin(props) {
           <p style={{ fontSize: 28, fontFamily: "'Instrument Serif',serif", fontWeight: 700, color: navy, margin: "0 0 4px" }}>EVES POTTERY</p>
           <p style={{ color: grayWarm, fontSize: 14, fontFamily: ft, margin: 0 }}>{subtitle || "Accedé a tus clases"}</p>
         </div>
-        {step === "login" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div><label style={lStyle}>Nombre completo</label>
-              <input value={nom} onChange={function (e) { setNom(e.target.value) }} onKeyDown={function (e) { if (e.key === "Enter") doLogin() }} placeholder="Tu nombre" style={iStyle} /></div>
-            {!skipPw ? <div><label style={lStyle}>Contraseña</label>
-              <input type="password" value={pw} onChange={function (e) { setPw(e.target.value) }} onKeyDown={function (e) { if (e.key === "Enter") doLogin() }} placeholder="Tu contraseña" style={iStyle} /></div> : null}
-            {err ? <p style={{ color: "#991b1b", fontSize: 13, margin: 0, fontFamily: ft }}>{err}</p> : null}
-            <button onClick={doLogin} disabled={busy} style={{ padding: "12px", borderRadius: 10, background: copper, color: white, border: "none", cursor: "pointer", fontWeight: 700, fontFamily: ft, fontSize: 14, width: "100%" }}>{busy ? "Verificando..." : "Entrar"}</button>
-            {!skipPw ? <p style={{ color: grayWarm, fontSize: 12, fontFamily: ft, margin: 0, textAlign: "center" }}>Primera vez? Ingresá tu nombre y te pedirá crear contraseña.</p> : null}
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ background: "#f0f5e8", borderRadius: 10, padding: 14, border: "1px solid #b5c48a" }}>
-              <p style={{ margin: 0, color: "#5a6a2a", fontSize: 14, fontFamily: ft }}>{"¡Hola " + found.nombre.split(" ")[0] + "! Creá tu contraseña."}</p></div>
-            <div><label style={lStyle}>Contraseña</label>
-              <input type="password" value={pw} onChange={function (e) { setPw(e.target.value) }} placeholder="Mínimo 4 caracteres" style={iStyle} /></div>
-            <div><label style={lStyle}>Repetí</label>
-              <input type="password" value={pw2} onChange={function (e) { setPw2(e.target.value) }} onKeyDown={function (e) { if (e.key === "Enter") doSetup() }} placeholder="Repetí" style={iStyle} /></div>
-            {err ? <p style={{ color: "#991b1b", fontSize: 13, margin: 0, fontFamily: ft }}>{err}</p> : null}
-            <button onClick={doSetup} disabled={busy} style={{ padding: "12px", borderRadius: 10, background: copper, color: white, border: "none", cursor: "pointer", fontWeight: 700, fontFamily: ft, fontSize: 14, width: "100%" }}>{busy ? "Guardando..." : "Crear y entrar"}</button>
-            <button onClick={function () { setStep("login"); setPw(""); setPw2(""); setErr("") }} style={{ padding: "12px", borderRadius: 10, background: white, color: navy, border: "1px solid " + grayBlue, cursor: "pointer", fontWeight: 600, fontFamily: ft, fontSize: 14, width: "100%" }}>{"← Volver"}</button>
-          </div>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div><label style={lStyle}>Nombre completo</label>
+            <input value={nom} onChange={function (e) { setNom(e.target.value) }} onKeyDown={function (e) { if (e.key === "Enter" && skipPw) doLogin() }} placeholder="Tu nombre" style={iStyle} /></div>
+          {!skipPw ? <div><label style={lStyle}>Contraseña</label>
+            <input type="password" value={pw} onChange={function (e) { setPw(e.target.value) }} onKeyDown={function (e) { if (e.key === "Enter") doLogin() }} placeholder="Tu contraseña" style={iStyle} /></div> : null}
+          {err ? <p style={{ color: "#991b1b", fontSize: 13, margin: 0, fontFamily: ft }}>{err}</p> : null}
+          <button onClick={doLogin} disabled={busy} style={{ padding: "12px", borderRadius: 10, background: copper, color: white, border: "none", cursor: "pointer", fontWeight: 700, fontFamily: ft, fontSize: 14, width: "100%" }}>{busy ? "Verificando..." : "Entrar"}</button>
+          {!skipPw ? <p style={{ color: grayWarm, fontSize: 12, fontFamily: ft, margin: 0, textAlign: "center" }}>{"¿No tenés tu contraseña? Pedísela al equipo de Eves Pottery."}</p> : null}
+        </div>
       </div>
     </div>);
 }
@@ -730,7 +748,6 @@ function AlumnoFlow(props) {
       var cm = (al.canc || []).filter(function (c) { return c.mk === mk });
       mc.forEach(function (d) { if (hrsUntil(d) > 0 && !cm.some(function (c) { return c.iso === d.toISOString() })) cls.push({ date: d, mk: mk, tot: mc.length, cc: cm.length }) })
     });
-    // Also include recuperaciones (extra classes) that can be cancelled
     (al.ex || []).forEach(function (e) {
       var d = new Date(e.date);
       if (hrsUntil(d) > 0) {
@@ -777,7 +794,6 @@ function AlumnoFlow(props) {
   async function doCanc(ci) {
     setBusy(true);
     if (ci.isExtra) {
-      // Cancel a recuperacion
       await supa("clases_extra", "DELETE", "?alumno_id=eq." + al.id + "&fecha_iso=eq." + encodeURIComponent(ci.date.toISOString()));
       await supa("historial", "POST", "", { alumno_id: al.id, accion: "❌ Canceló recup " + fmtDate(ci.date) });
       await refreshData(); setBusy(false);
@@ -827,7 +843,6 @@ function AlumnoFlow(props) {
       </div>
     </div>);
 
-  // Calendar slots
   var availDates = getAvailableDates();
   var slotsForDate = getSlotsForDate(calDate);
 
@@ -966,7 +981,6 @@ export default function App() {
   var cur = logged ? als.find(function (a) { return a.id === logged.id }) : null;
   var curProfe = loggedProfe ? profes.find(function (p) { return p.id === loggedProfe.id }) : null;
 
-  // When logged user data updates from refresh
   useEffect(function () { if (logged && cur) { setLogged(function (prev) { return prev && prev.id === cur.id ? cur : prev }) } }, [als]);
 
   var route = "alumna";
