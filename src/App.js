@@ -1,7 +1,7 @@
-
 import { useState, useEffect, useRef } from "react";
 var navy="#132435",gold="#D0B48F",copper="#C78538",olive="#8C8135",grayBlue="#CBD1DD",cream="#E9E9E2",grayWarm="#808078",white="#fff";
 var ft="'Barlow Semi Condensed',sans-serif";
+var ADMIN_PW="Clases2026";
 var SCHED={
   "San Isidro":["lunes-18:00","martes-09:30","martes-14:00","martes-18:30","miércoles-18:30","jueves-18:30","viernes-18:00","sábado-10:00"],
   "Palermo":["lunes-10:00","lunes-18:30","martes-14:30","martes-18:30","miércoles-18:30","jueves-14:30","jueves-18:30","viernes-10:00","viernes-18:30"]
@@ -24,21 +24,29 @@ function fmtDateShort(d){
   var dn=["dom","lun","mar","mié","jue","vie","sáb"];
   return dn[d.getDay()]+" "+d.getDate()+"/"+(d.getMonth()+1)+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
 var nextId=8;var nextProfeId=7;
+function genPw(prefix){return prefix+String(Math.floor(1000+Math.random()*9000))}
 function makeInit(){
-  var names=["Lilian Quiroga","Patricia Bilbao Molina","Soledad Romera","Mariana Schammas","Claudia Moretti","Claudia Gurisich"];
-  var als=names.map(function(name,i){
-    return{id:i+1,nombre:name,tel:"",email:"",sede:"Palermo",turno:{dia:"martes",hora:"14:30"},mp:{"2026-2":true},hist:["Alta","Pago marzo 2026"],ex:[],canc:[],reg:0,pw:null}});
-  als.push({id:7,nombre:"Maia Bayley Bustamante",tel:"",email:"",sede:"Palermo",turno:{dia:"jueves",hora:"18:30"},mp:{"2026-2":true},hist:["Alta","Pago marzo 2026"],ex:[],canc:[],reg:0,pw:null});
+  var data=[
+    {n:"Lilian Quiroga",pw:"eves4821"},
+    {n:"Patricia Bilbao Molina",pw:"eves7356"},
+    {n:"Soledad Romera",pw:"eves2947"},
+    {n:"Mariana Schammas",pw:"eves6183"},
+    {n:"Claudia Moretti",pw:"eves5094"},
+    {n:"Claudia Gurisich",pw:"eves3762"}
+  ];
+  var als=data.map(function(d,i){
+    return{id:i+1,nombre:d.n,tel:"",email:"",sede:"Palermo",turno:{dia:"martes",hora:"14:30"},mp:{"2026-2":true},hist:["Alta","Pago marzo 2026"],ex:[],canc:[],reg:0,pw:d.pw}});
+  als.push({id:7,nombre:"Maia Bayley Bustamante",tel:"",email:"",sede:"Palermo",turno:{dia:"jueves",hora:"18:30"},mp:{"2026-2":true},hist:["Alta","Pago marzo 2026"],ex:[],canc:[],reg:0,pw:"eves8415"});
   return als;
 }
 function makeInitProfes(){
   return[
-    {id:1,nombre:"Vero",sede:"Palermo",horarios:["martes-14:30","martes-16:30","martes-18:30","jueves-10:00","jueves-14:30","jueves-16:30","jueves-18:30"],pw:null,esEncargada:false,sedeEncargada:null},
-    {id:2,nombre:"Ale",sede:"Palermo",horarios:["lunes-10:00","viernes-10:00"],pw:null,esEncargada:false,sedeEncargada:null},
-    {id:3,nombre:"Maca",sede:"Palermo",horarios:["viernes-16:30","viernes-18:30"],pw:null,esEncargada:false,sedeEncargada:null},
-    {id:4,nombre:"Agustina",sede:"San Isidro",horarios:["lunes-18:00","martes-09:30","martes-14:00","martes-18:30","miércoles-18:30","jueves-18:30"],pw:null,esEncargada:true,sedeEncargada:"San Isidro"},
-    {id:5,nombre:"Mila",sede:"San Isidro",horarios:["viernes-18:00"],pw:null,esEncargada:false,sedeEncargada:null},
-    {id:6,nombre:"Laura",sede:"San Isidro",horarios:["sábado-10:00"],pw:null,esEncargada:false,sedeEncargada:null}
+    {id:1,nombre:"Vero",sede:"Palermo",horarios:["martes-14:30","martes-16:30","martes-18:30","jueves-10:00","jueves-14:30","jueves-16:30","jueves-18:30"],pw:"prof9247",esEncargada:false,sedeEncargada:null},
+    {id:2,nombre:"Ale",sede:"Palermo",horarios:["lunes-10:00","viernes-10:00"],pw:"prof3618",esEncargada:false,sedeEncargada:null},
+    {id:3,nombre:"Maca",sede:"Palermo",horarios:["viernes-16:30","viernes-18:30"],pw:"prof7053",esEncargada:false,sedeEncargada:null},
+    {id:4,nombre:"Agustina",sede:"San Isidro",horarios:["lunes-18:00","martes-09:30","martes-14:00","martes-18:30","miércoles-18:30","jueves-18:30"],pw:"prof4826",esEncargada:true,sedeEncargada:"San Isidro"},
+    {id:5,nombre:"Mila",sede:"San Isidro",horarios:["viernes-18:00"],pw:"prof2591",esEncargada:false,sedeEncargada:null},
+    {id:6,nombre:"Laura",sede:"San Isidro",horarios:["sábado-10:00"],pw:"prof8134",esEncargada:false,sedeEncargada:null}
   ];
 }
 function getMonthStats(al,mk){
@@ -65,22 +73,63 @@ function getCupoForSlot(allAls,sede,dia,hora,fecha){
     (a.ex||[]).forEach(function(e){if(e.date===dateStr)recups++})});
   return{ocupado:fijos+recups,libre:MAX_CUPO-fijos-recups};
 }
-// helper: get alumnos expected for a specific date+time+sede
 function getAlumnosForSlot(allAls,sede,dia,hora,fecha){
   var dateStr=fecha.toISOString();var result=[];
   allAls.forEach(function(a){
     if(a.sede!==sede)return;
     var mk=fecha.getFullYear()+"-"+fecha.getMonth();
     if(!(a.mp||{})[mk])return;
-    // fijo en ese turno y no canceló
     if(a.turno.dia===dia&&a.turno.hora===hora){
       var cancelled=(a.canc||[]).some(function(c){return c.iso===dateStr});
       if(!cancelled)result.push({alumno:a,tipo:"fijo"})}
-    // recuperación en ese slot
     (a.ex||[]).forEach(function(e){
       if(e.date===dateStr&&!result.find(function(r){return r.alumno.id===a.id}))
         result.push({alumno:a,tipo:"recuperacion"})})});
   return result;
+}
+function countFijosForSlot(allAls,sede,dia,hora,fecha){
+  var dateStr=fecha.toISOString();var mk=fecha.getFullYear()+"-"+fecha.getMonth();var count=0;
+  allAls.forEach(function(a){
+    if(a.sede!==sede)return;
+    if(!(a.mp||{})[mk])return;
+    if(a.turno.dia===dia&&a.turno.hora===hora){
+      var cancelled=(a.canc||[]).some(function(c){return c.iso===dateStr});
+      if(!cancelled)count++}});
+  return count;
+}
+// ====== HASH ROUTER ======
+function useHash(){
+  var _h=useState(window.location.hash||"#/alumna");
+  var hash=_h[0],setHash=_h[1];
+  useEffect(function(){
+    function onHash(){setHash(window.location.hash)}
+    window.addEventListener("hashchange",onHash);
+    return function(){window.removeEventListener("hashchange",onHash)}},[]);
+  return hash;
+}
+// ====== ADMIN LOGIN ======
+function AdminLogin(props){
+  var _pw=useState(""),pw=_pw[0],setPw=_pw[1];
+  var _err=useState(""),err=_err[0],setErr=_err[1];
+  function doLogin(){
+    if(pw===ADMIN_PW){props.onLogin();setErr("")}
+    else setErr("Contraseña incorrecta.")}
+  var iStyle={width:"100%",padding:"12px 16px",borderRadius:10,border:"1px solid "+grayBlue,fontSize:14,fontFamily:ft,background:white,outline:"none",boxSizing:"border-box"};
+  return(
+    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:cream}}>
+      <div style={{width:"100%",maxWidth:360}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <p style={{fontSize:28,fontFamily:"'Instrument Serif',serif",fontWeight:700,color:navy,margin:"0 0 4px"}}>EVES POTTERY</p>
+          <p style={{color:grayWarm,fontSize:14,fontFamily:ft,margin:0}}>Panel de administración</p>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><label style={{fontSize:12,fontWeight:600,color:navy,fontFamily:ft,marginBottom:4,display:"block"}}>Contraseña</label>
+            <input type="password" value={pw} onChange={function(e){setPw(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")doLogin()}} placeholder="Contraseña de admin" style={iStyle}/></div>
+          {err?<p style={{color:"#991b1b",fontSize:13,margin:0,fontFamily:ft}}>{err}</p>:null}
+          <button onClick={doLogin} style={{padding:"12px",borderRadius:10,background:copper,color:white,border:"none",cursor:"pointer",fontWeight:700,fontFamily:ft,fontSize:14,width:"100%"}}>Entrar</button>
+        </div>
+      </div>
+    </div>);
 }
 // ====== ADMIN CHAT ======
 function AdminChat(props){
@@ -92,12 +141,9 @@ function AdminChat(props){
   useEffect(function(){if(ref.current)ref.current.scrollIntoView({behavior:"smooth"})},[msgs]);
   function addLog(txt){setLogs(function(p){return p.concat({ts:new Date().toLocaleString(),action:txt})})}
   function findA(name){var low=name.toLowerCase().trim();return als.findIndex(function(a){return a.nombre.toLowerCase().includes(low)})}
-  // Parse sede filter from text
   function parseSede(t){
-    // check for P or SI at end or after keyword
     var m=t.match(/\b(si|san\s*isidro)\b/i);
     if(m)return"San Isidro";
-    // careful: only match standalone P, not inside words
     var mp=t.match(/\bP\b/);
     if(mp)return"Palermo";
     return null;
@@ -110,16 +156,13 @@ function AdminChat(props){
     var t=txt.toLowerCase().trim();
     var sedeFilter=parseSede(t);
     var sedeLabel=sedeFilter?" ("+sedeFilter+")":"";
-    // NOTIFICACIONES
     if(t.startsWith("notificacion")||t.startsWith("notif")){
       var r="✦ Notificaciones\n\n";
-      // Profes sin lista (7 días)
       var now=new Date();var weekAgo=new Date(now);weekAgo.setDate(weekAgo.getDate()-7);
       var sinLista=[];
       profes.forEach(function(pr){
         pr.horarios.forEach(function(h){
           var parts=h.split("-");
-          // check dates in last 7 days
           for(var dd=new Date(weekAgo);dd<=now;dd.setDate(dd.getDate()+1)){
             var dow=dd.getDay();var dayIdx=dow===0?6:dow-1;
             if(DAYS[dayIdx]===parts[0]){
@@ -134,25 +177,21 @@ function AdminChat(props){
         sinLista.forEach(function(s){r+="• "+s.profe+" — "+s.fecha+" ("+s.sede+")\n"});
       }else r+="📋 Todas las profes tomaron lista ✓\n";
       r+="\n";
-      // Alumnos que dicen haber pagado
       if(payNotifs.length){
         r+="💳 Alumnos que dicen haber pagado:\n";
         payNotifs.forEach(function(pn){r+="• "+pn.nombre+" — "+pn.ts+"\n"});
       }else r+="💳 Sin avisos de pago pendientes ✓\n";
       r+="\n";
-      // Reset requests
       if(resetReqs.length){
         r+="🔑 Solicitudes de reset:\n";
         resetReqs.forEach(function(rr){r+="• "+rr.nombre+" — "+rr.ts+"\n"});
       }else r+="🔑 Sin solicitudes de reset ✓\n";
       return r;
     }
-    // VER PROFES
     if(t.includes("ver profe")||t==="profes"){
       if(!profes.length)return"No hay profes cargadas.";
       return"✦ Profesoras:\n\n"+profes.map(function(p){
         return"• "+p.nombre+" — "+p.sede+(p.esEncargada?" (Encargada)":"")+"\n  Horarios: "+p.horarios.map(function(h){return h.replace("-"," ")}).join(", ")}).join("\n")}
-    // ALTA PROFE
     if(t.startsWith("alta profe")){
       var raw=txt.replace(/alta\s*profe\s*:?\s*/i,"").trim();
       var parts=raw.split("/").map(function(s){return s.trim()});
@@ -160,7 +199,6 @@ function AdminChat(props){
       var nom=parts[0];
       var sede=parts[1].toLowerCase().includes("palermo")?"Palermo":"San Isidro";
       var horStr=parts.slice(2).join("/");
-      // Normalize common typos for day names
       var dayFix={"lunes":"lunes","martes":"martes","miercoles":"miércoles","miércoles":"miércoles","jueves":"jueves","viernes":"viernes","vienres":"viernes","sabado":"sábado","sábado":"sábado"};
       var hors=horStr.split(",").map(function(h){
         var m=h.trim().toLowerCase().match(/([a-záéíóúñü]+)\s+(\d{1,2}:\d{2})/);
@@ -169,11 +207,11 @@ function AdminChat(props){
         if(!dayNorm)return null;
         return dayNorm+"-"+m[2]}).filter(Boolean);
       if(!hors.length)return"No entendí los horarios. Ej: martes 14:30, jueves 18:30";
-      var np={id:nextProfeId++,nombre:nom,sede:sede,horarios:hors,pw:null,esEncargada:false,sedeEncargada:null};
+      var newPwP=genPw("prof");
+      var np={id:nextProfeId++,nombre:nom,sede:sede,horarios:hors,pw:newPwP,esEncargada:false,sedeEncargada:null};
       setProfes(function(p){return p.concat(np)});
       addLog("Alta profe: "+nom+" — "+sede);
-      return"✓ Profe "+nom+" — "+sede+"\nHorarios: "+hors.map(function(h){return h.replace("-"," ")}).join(", ")}
-    // BAJA PROFE
+      return"✓ Profe "+nom+" — "+sede+"\nHorarios: "+hors.map(function(h){return h.replace("-"," ")}).join(", ")+"\n🔑 Contraseña: "+newPwP}
     if(t.startsWith("baja profe")){
       var n=txt.replace(/baja\s*profe\s*:?\s*/i,"").trim();
       var idx=profes.findIndex(function(p){return p.nombre.toLowerCase().includes(n.toLowerCase())});
@@ -182,13 +220,11 @@ function AdminChat(props){
       setProfes(function(p){return p.filter(function(_,i){return i!==idx})});
       addLog("Baja profe: "+pr.nombre);
       return"✓ "+pr.nombre+" dada de baja."}
-    // PAGOS PENDIENTES
     if(t.includes("pagos pendiente")||t.includes("pago pendiente")){
       var now2=new Date();var mk=now2.getFullYear()+"-"+now2.getMonth();
       var pend=filterBySede(als,sedeFilter).filter(function(a){return!(a.mp||{})[mk]});
       if(!pend.length)return"✓ Todos al día"+sedeLabel;
       return"✦ Pagos pendientes "+MN[now2.getMonth()]+" "+now2.getFullYear()+sedeLabel+":\n\n"+pend.map(function(a){return"• "+a.nombre+" — "+a.sede+" — "+a.turno.dia+" "+a.turno.hora}).join("\n")+"\n\nTotal: "+pend.length}
-    // PAGO MASIVO
     var masMatch=txt.match(/pagos\s+([\wéáíóú]+)\s+(\d{4})\s*:\s*(.+)/i);
     if(masMatch){
       var parsed=parseMes(masMatch[1]+" "+masMatch[2]);
@@ -196,28 +232,26 @@ function AdminChat(props){
       var nombres=masMatch[3].split(",").map(function(s){return s.trim()}).filter(Boolean);
       var ok=[],nf=[];
       var newAls=als.slice();
-      nombres.forEach(function(nom){
-        var idx=newAls.findIndex(function(a){return a.nombre.toLowerCase().includes(nom.toLowerCase())});
-        if(idx===-1){nf.push(nom);return}
-        var al=newAls[idx];
+      nombres.forEach(function(nom2){
+        var idx2=newAls.findIndex(function(a){return a.nombre.toLowerCase().includes(nom2.toLowerCase())});
+        if(idx2===-1){nf.push(nom2);return}
+        var al=newAls[idx2];
         var tc=classesInMonth(al.turno.dia,al.turno.hora,parsed.month,parsed.year).length;
         var newMp=Object.assign({},al.mp);newMp[parsed.key]=true;
-        newAls[idx]=Object.assign({},al,{mp:newMp,hist:(al.hist||[]).concat("💳 "+MN[parsed.month]+" "+parsed.year)});
+        newAls[idx2]=Object.assign({},al,{mp:newMp,hist:(al.hist||[]).concat("💳 "+MN[parsed.month]+" "+parsed.year)});
         ok.push(al.nombre);
         addLog("Pago: "+al.nombre+" — "+MN[parsed.month])});
       setAls(newAls);
       var r2="✦ Pago masivo "+MN[parsed.month]+" "+parsed.year+":\n\n";
-      if(ok.length)r2+="✓ Registrados ("+ok.length+"):\n"+ok.map(function(n){return"  • "+n}).join("\n")+"\n";
-      if(nf.length)r2+="\n✗ No encontrados ("+nf.length+"):\n"+nf.map(function(n){return"  • "+n}).join("\n");
+      if(ok.length)r2+="✓ Registrados ("+ok.length+"):\n"+ok.map(function(n2){return"  • "+n2}).join("\n")+"\n";
+      if(nf.length)r2+="\n✗ No encontrados ("+nf.length+"):\n"+nf.map(function(n2){return"  • "+n2}).join("\n");
       return r2}
-    // VER ALUMNOS
     if(t.includes("ver alumno")||t==="alumnos"||t==="lista"){
       var filtered=filterBySede(als,sedeFilter);
       if(!filtered.length)return"No hay alumnos"+sedeLabel+".";
       return"✦ Alumnos"+sedeLabel+":\n\n"+filtered.map(function(a){
         var meses=Object.keys(a.mp||{}).map(function(k){return MN[parseInt(k.split("-")[1])]}).join(", ")||"—";
         return"• "+a.nombre+" — "+a.sede+" — "+a.turno.dia+" "+a.turno.hora+" — Pagó: "+meses}).join("\n")}
-    // VER HISTORIAL
     if(t.includes("historial")||t.includes("log")||t.includes("movimiento")){
       var filteredLogs=logs;
       if(sedeFilter){
@@ -226,16 +260,15 @@ function AdminChat(props){
           return l.action.includes("San Isidro")})}
       if(!filteredLogs.length)return"No hay movimientos"+sedeLabel+".";
       return"✦ Movimientos"+sedeLabel+":\n\n"+filteredLogs.slice(-15).map(function(l){return"["+l.ts+"] "+l.action}).join("\n")}
-    // ALUMNOS DE HOY / DIA
     if(t.includes("alumnos de")||t.includes("alumnos del")||t.includes("planilla")){
       var td=new Date();var label="hoy";
       if(t.includes("mañana")){td=new Date();td.setDate(td.getDate()+1);label="mañana"}
       else{var dm=t.match(/(lunes|martes|miércoles|jueves|viernes|sábado|domingo)/);
         if(dm){var ti=DAYS.indexOf(dm[1]);var ci=td.getDay();var cx=ci===0?6:ci-1;var diff=ti-cx;if(diff<=0)diff+=7;td=new Date();td.setDate(td.getDate()+diff);label=dm[1]}}
-      var dow=td.getDay();var dayN=DAYS[dow===0?6:dow-1];var mk=td.getFullYear()+"-"+td.getMonth();
+      var dow=td.getDay();var dayN=DAYS[dow===0?6:dow-1];var mk2=td.getFullYear()+"-"+td.getMonth();
       var list=[];
       filterBySede(als,sedeFilter).forEach(function(a){
-        if(a.turno.dia!==dayN)return;if(!(a.mp||{})[mk])return;
+        if(a.turno.dia!==dayN)return;if(!(a.mp||{})[mk2])return;
         var dateObj=new Date(td);var pp=a.turno.hora.split(":");dateObj.setHours(parseInt(pp[0]),parseInt(pp[1]),0,0);
         var cancelled=(a.canc||[]).some(function(c){return c.iso===dateObj.toISOString()});
         if(!cancelled)list.push(a)});
@@ -249,22 +282,20 @@ function AdminChat(props){
       list.sort(function(a,b){return a.turno.hora.localeCompare(b.turno.hora)});
       list.forEach(function(a){r3+="• "+a.turno.hora+" — "+a.nombre+(a.isRec?" (recup)":"")+" ("+a.sede+")\n"});
       r3+="\nTotal: "+list.length;return r3}
-    // BAJA ALUMNO
     if(t.startsWith("baja")&&!t.startsWith("baja profe")){
-      var n2=txt.replace(/baja\s*:?\s*/i,"").trim();if(!n2)return"Formato: Baja: Nombre";
-      var idx2=findA(n2);if(idx2===-1)return"✗ No encontré ese nombre.";
-      var al2=als[idx2];setAls(function(p){return p.filter(function(_,i){return i!==idx2})});addLog("Baja: "+al2.nombre+" — "+al2.sede);
-      return"✓ "+al2.nombre+" dado de baja."}
-    // CONSULTA
+      var n3=txt.replace(/baja\s*:?\s*/i,"").trim();if(!n3)return"Formato: Baja: Nombre";
+      var idx3=findA(n3);if(idx3===-1)return"✗ No encontré ese nombre.";
+      var al3=als[idx3];setAls(function(p){return p.filter(function(_,i){return i!==idx3})});addLog("Baja: "+al3.nombre+" — "+al3.sede);
+      return"✓ "+al3.nombre+" dado de baja."}
     if(t.startsWith("consulta")){
-      var n3=txt.replace(/consulta\s*:?\s*/i,"").trim();if(!n3)return"Formato: Consulta: Nombre";
-      var idx3=findA(n3);if(idx3===-1)return"✗ No encontré ese nombre.";var a3=als[idx3];
-      var meses3=Object.keys(a3.mp||{});
-      var r4="✦ "+a3.nombre+"\n📍 "+a3.sede+" · "+a3.turno.dia+" "+a3.turno.hora;
-      r4+="\n💳 Pagó: "+(meses3.length?meses3.map(function(k){var p=k.split("-");return MN[parseInt(p[1])]+" "+p[0]}).join(", "):"—");
-      r4+="\n🎁 Regalo: "+(a3.reg||0);
-      meses3.forEach(function(mk2){
-        var stats=getMonthStats(a3,mk2);var p=mk2.split("-").map(Number);
+      var n4=txt.replace(/consulta\s*:?\s*/i,"").trim();if(!n4)return"Formato: Consulta: Nombre";
+      var idx4=findA(n4);if(idx4===-1)return"✗ No encontré ese nombre.";var a4=als[idx4];
+      var meses4=Object.keys(a4.mp||{});
+      var r4="✦ "+a4.nombre+"\n📍 "+a4.sede+" · "+a4.turno.dia+" "+a4.turno.hora;
+      r4+="\n💳 Pagó: "+(meses4.length?meses4.map(function(k){var p=k.split("-");return MN[parseInt(p[1])]+" "+p[0]}).join(", "):"—");
+      r4+="\n🎁 Regalo: "+(a4.reg||0);
+      meses4.forEach(function(mk3){
+        var stats=getMonthStats(a4,mk3);var p=mk3.split("-").map(Number);
         r4+="\n\n📅 "+MN[p[1]]+" "+p[0]+":";
         r4+="\n  Clases en mes: "+stats.totalInMonth+(stats.is5?" (5ta regalo)":"");
         r4+="\n  Cancelaciones: "+stats.cancTotal+(stats.cancSinRecup>0?" ("+stats.cancSinRecup+" sin recup)":"");
@@ -272,48 +303,46 @@ function AdminChat(props){
         r4+="\n  Pendientes: "+stats.pendientes;
         r4+="\n  Clases efectivas: "+stats.clasesEfectivas+"/"+CLASES_BASE});
       return r4}
-    // CLASE REGALO
     if(t.includes("clase regalo")||t.includes("regalar clase")){
-      var n4=txt.replace(/clase\s*(de\s*)?regalo\s*:?\s*/i,"").replace(/regalar\s*clase\s*:?\s*/i,"").trim();
-      if(!n4)return"Formato: Clase regalo: Nombre";var idx4=findA(n4);if(idx4===-1)return"✗ No encontré ese nombre.";
-      var al4=als[idx4];
-      setAls(function(p){var c=p.slice();c[idx4]=Object.assign({},c[idx4],{reg:(c[idx4].reg||0)+1,hist:(c[idx4].hist||[]).concat("🎁 Regalo")});return c});
-      setNotif(function(p){var o=Object.assign({},p);o[al4.id]=(o[al4.id]||[]).concat("🎁 ¡Tenés una clase de regalo!");return o});
-      addLog("Regalo: "+al4.nombre+" — "+al4.sede);return"✓ Regalo para "+al4.nombre}
-    // ALTA ALUMNO
+      var n5=txt.replace(/clase\s*(de\s*)?regalo\s*:?\s*/i,"").replace(/regalar\s*clase\s*:?\s*/i,"").trim();
+      if(!n5)return"Formato: Clase regalo: Nombre";var idx5=findA(n5);if(idx5===-1)return"✗ No encontré ese nombre.";
+      var al5=als[idx5];
+      setAls(function(p){var c=p.slice();c[idx5]=Object.assign({},c[idx5],{reg:(c[idx5].reg||0)+1,hist:(c[idx5].hist||[]).concat("🎁 Regalo")});return c});
+      setNotif(function(p){var o=Object.assign({},p);o[al5.id]=(o[al5.id]||[]).concat("🎁 ¡Tenés una clase de regalo!");return o});
+      addLog("Regalo: "+al5.nombre+" — "+al5.sede);return"✓ Regalo para "+al5.nombre}
     var hasSlashes=txt.includes("/");
     var looksLikeAlta=t.includes("alta")||(hasSlashes&&(t.includes("palermo")||t.includes("san isidro")||t.includes("isidro")));
     if(looksLikeAlta&&!t.startsWith("alta profe")){
       var parts2=txt.split("/").map(function(s){return s.trim()});
       if(parts2.length<3)return"Formato: Nombre / Sede / día hora";
-      var nom2,tel2="",email2="",sedePart,turnoPart;
-      if(parts2.length>=5){nom2=parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i,"").trim();tel2=parts2[1];email2=parts2[2];sedePart=parts2[3];turnoPart=parts2[4]}
-      else if(parts2.length===4){nom2=parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i,"").trim();
+      var nom3,tel2="",email2="",sedePart,turnoPart;
+      if(parts2.length>=5){nom3=parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i,"").trim();tel2=parts2[1];email2=parts2[2];sedePart=parts2[3];turnoPart=parts2[4]}
+      else if(parts2.length===4){nom3=parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i,"").trim();
         if(parts2[1].toLowerCase().includes("palermo")||parts2[1].toLowerCase().includes("isidro")){sedePart=parts2[1];turnoPart=parts2[2]+" "+parts2[3]}
         else{tel2=parts2[1];sedePart=parts2[2];turnoPart=parts2[3]}}
-      else{nom2=parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i,"").trim();sedePart=parts2[1];turnoPart=parts2[2]}
+      else{nom3=parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i,"").trim();sedePart=parts2[1];turnoPart=parts2[2]}
       var sede2=sedePart.toLowerCase().includes("palermo")?"Palermo":"San Isidro";
       var tm=turnoPart.toLowerCase().match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if(!tm)return"No entendí el turno. Ej: martes 14:30";var sk=tm[1]+"-"+tm[2];
       if(SCHED[sede2].indexOf(sk)===-1)return"✗ No existe ese horario en "+sede2+".\nDisponibles: "+SCHED[sede2].map(function(s){return s.replace("-"," ")}).join(", ");
-      var na={id:nextId++,nombre:nom2,tel:tel2,email:email2,sede:sede2,turno:{dia:tm[1],hora:tm[2]},mp:{},hist:["Alta"],ex:[],canc:[],reg:0,pw:null};
-      setAls(function(p){return p.concat(na)});addLog("Alta: "+nom2+" — "+sede2);
-      return"✓ Alta: "+nom2+" — "+sede2+" "+tm[1]+" "+tm[2]}
-    // PAGO INDIVIDUAL
+      var newPw=genPw("eves");
+      var na={id:nextId++,nombre:nom3,tel:tel2,email:email2,sede:sede2,turno:{dia:tm[1],hora:tm[2]},mp:{},hist:["Alta"],ex:[],canc:[],reg:0,pw:newPw};
+      setAls(function(p){return p.concat(na)});addLog("Alta: "+nom3+" — "+sede2);
+      return"✓ Alta: "+nom3+" — "+sede2+" "+tm[1]+" "+tm[2]+"\n🔑 Contraseña: "+newPw}
     if(t.includes("pago")){
       var match=txt.match(/pago\s*(recibido|confirmado|ok)\s*:?\s*(.+)/i);
       if(!match)return"Formato: Pago recibido: Nombre (marzo 2026)";
       var rest=match[2].trim();var mesM=rest.match(/\(([^)]+)\)/);
       if(!mesM)return"Incluí el mes entre paréntesis.";
       var parsed2=parseMes(mesM[1]);if(!parsed2)return"No entendí el mes.";
-      var n5=rest.replace(/\([^)]+\)/,"").trim();var idx5=findA(n5);
-      if(idx5===-1)return"✗ No encontré ese nombre.";var al5=als[idx5];
-      var tc=classesInMonth(al5.turno.dia,al5.turno.hora,parsed2.month,parsed2.year).length;
-      setAls(function(p){var c=p.slice();var newMp=Object.assign({},c[idx5].mp);newMp[parsed2.key]=true;
-        c[idx5]=Object.assign({},c[idx5],{mp:newMp,hist:(c[idx5].hist||[]).concat("💳 "+MN[parsed2.month]+" "+parsed2.year)});return c});
-      setNotif(function(p){var o=Object.assign({},p);o[al5.id]=(o[al5.id]||[]).concat("✅ Pago "+MN[parsed2.month]+" habilitado.");return o});
-      addLog("Pago: "+al5.nombre+" — "+MN[parsed2.month]+" — "+al5.sede);
-      return"✓ "+al5.nombre+" — "+MN[parsed2.month]+" "+parsed2.year+" ("+tc+" clases"+(tc===5?" — 5ta regalo":"")+")\nDerecho a "+CLASES_BASE+" clases efectivas."}
+      var n6=rest.replace(/\([^)]+\)/,"").trim();var idx6=findA(n6);
+      if(idx6===-1)return"✗ No encontré ese nombre.";var al6=als[idx6];
+      var tc=classesInMonth(al6.turno.dia,al6.turno.hora,parsed2.month,parsed2.year).length;
+      setAls(function(p){var c=p.slice();var newMp=Object.assign({},c[idx6].mp);newMp[parsed2.key]=true;
+        c[idx6]=Object.assign({},c[idx6],{mp:newMp,hist:(c[idx6].hist||[]).concat("💳 "+MN[parsed2.month]+" "+parsed2.year)});return c});
+      setNotif(function(p){var o=Object.assign({},p);o[al6.id]=(o[al6.id]||[]).concat("✅ Pago "+MN[parsed2.month]+" habilitado.");return o});
+      addLog("Pago: "+al6.nombre+" — "+MN[parsed2.month]+" — "+al6.sede);
+      return"✓ "+al6.nombre+" — "+MN[parsed2.month]+" "+parsed2.year+" ("+tc+" clases"+(tc===5?" — 5ta regalo":"")+")\nDerecho a "+CLASES_BASE+" clases efectivas."}
     return"No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, alumnos de hoy, ver historial, pagos pendientes, alta profe, ver profes, notificaciones"}
   function send(){if(!inp.trim())return;var txt=inp;setMsgs(function(p){return p.concat({from:"user",text:txt},{from:"bot",text:respond(txt)})});setInp("")}
   return(
@@ -334,7 +363,7 @@ function AdminChat(props){
 }
 // ====== LOGIN GENERICO ======
 function GenericLogin(props){
-  var items=props.items,setItems=props.setItems,onLogin=props.onLogin,title=props.title,subtitle=props.subtitle,onResetReq=props.onResetReq;
+  var items=props.items,setItems=props.setItems,onLogin=props.onLogin,subtitle=props.subtitle,skipPw=props.skipPw;
   var _step=useState("login"),step=_step[0],setStep=_step[1];
   var _nom=useState(""),nom=_nom[0],setNom=_nom[1];
   var _pw=useState(""),pw=_pw[0],setPw=_pw[1];
@@ -344,8 +373,8 @@ function GenericLogin(props){
   function doLogin(){setErr("");
     var idx=items.findIndex(function(a){return a.nombre.toLowerCase()===nom.toLowerCase().trim()});
     if(idx===-1){setErr("No encontramos ese nombre.");return}
-    if(!items[idx].pw){setFound(items[idx]);setStep("setup");return}
-    if(items[idx].pw!==pw){setErr("Contraseña incorrecta.");return}
+    if(skipPw){onLogin(items[idx]);return}
+    if(!items[idx].pw||items[idx].pw!==pw){setErr("Contraseña incorrecta.");return}
     onLogin(items[idx])}
   function doSetup(){setErr("");
     if(pw.length<4){setErr("Mínimo 4 caracteres.");return}
@@ -363,13 +392,13 @@ function GenericLogin(props){
         </div>
         {step==="login"?(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div><label style={lStyle}>Nombre</label>
+            <div><label style={lStyle}>Nombre completo</label>
               <input value={nom} onChange={function(e){setNom(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")doLogin()}} placeholder="Tu nombre" style={iStyle}/></div>
-            <div><label style={lStyle}>Contraseña</label>
-              <input type="password" value={pw} onChange={function(e){setPw(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")doLogin()}} placeholder="Tu contraseña" style={iStyle}/></div>
+            {!skipPw?<div><label style={lStyle}>Contraseña</label>
+              <input type="password" value={pw} onChange={function(e){setPw(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter")doLogin()}} placeholder="Tu contraseña" style={iStyle}/></div>:null}
             {err?<p style={{color:"#991b1b",fontSize:13,margin:0,fontFamily:ft}}>{err}</p>:null}
             <button onClick={doLogin} style={{padding:"12px",borderRadius:10,background:copper,color:white,border:"none",cursor:"pointer",fontWeight:700,fontFamily:ft,fontSize:14,width:"100%"}}>Entrar</button>
-            <p style={{color:grayWarm,fontSize:12,fontFamily:ft,margin:0,textAlign:"center"}}>Primera vez? Ingresá tu nombre y te pedirá crear contraseña.</p>
+            {!skipPw?<p style={{color:grayWarm,fontSize:12,fontFamily:ft,margin:0,textAlign:"center"}}>Primera vez? Ingresá tu nombre y te pedirá crear contraseña.</p>:null}
           </div>
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -410,17 +439,6 @@ function ProfeView(props){
       </div>
     </div>);
 }
-// helper: count fijos (alumnos with this as their regular turno, not cancelled, with active payment)
-function countFijosForSlot(allAls,sede,dia,hora,fecha){
-  var dateStr=fecha.toISOString();var mk=fecha.getFullYear()+"-"+fecha.getMonth();var count=0;
-  allAls.forEach(function(a){
-    if(a.sede!==sede)return;
-    if(!(a.mp||{})[mk])return;
-    if(a.turno.dia===dia&&a.turno.hora===hora){
-      var cancelled=(a.canc||[]).some(function(c){return c.iso===dateStr});
-      if(!cancelled)count++}});
-  return count;
-}
 function ProfeClases(props){
   var profe=props.profe,als=props.als;
   var now=new Date();var limit=new Date(now);limit.setDate(limit.getDate()+7);
@@ -444,19 +462,15 @@ function ProfeClases(props){
       clases.map(function(c,i){
         var msgText,msgBg,msgBorder,msgColor;
         if(isSI){
-          // San Isidro: siempre positivo
-          msgText="☀️ ¡Esperamos que disfrutes mucho la clase! Por favor, no te olvides de tomar lista. ¡Gracias! 😊";
+          msgText="☀️ ¡Que disfrutes mucho de la clase! Por favor, no te olvides de tomar lista. ¡Gracias! 😊";
           msgBg="#f0f5e8";msgBorder="#b5c48a";msgColor="#5a6a2a";
         }else if(c.fijos===0){
-          // Palermo: 0 fijos = no abierto, producción
           msgText="🔧 No hay alumnos en este horario, recuerda hacer producción por favor. ¡Que lo disfrutes!";
           msgBg="#f5f0fa";msgBorder="#c4b5d4";msgColor="#6b5080";
         }else if(c.alumnos<4){
-          // Palermo: 1-3 alumnos
           msgText="⚠️ Hay menos de 4 alumnos, recordá por favor hacer producción o trabajo de taller. ¡Disfrutá mucho de la clase y por favor no te olvides de tomar lista! Gracias 😊";
           msgBg="#fdf6ec";msgBorder="#e8d4b0";msgColor="#92651e";
         }else{
-          // 4+
           msgText="☀️ ¡Que disfrutes mucho de la clase! Por favor, no te olvides de tomar lista. ¡Gracias! 😊";
           msgBg="#f0f5e8";msgBorder="#b5c48a";msgColor="#5a6a2a";
         }
@@ -479,7 +493,6 @@ function ProfeLista(props){
   var _search=useState(""),search=_search[0],setSearch=_search[1];
   var _done=useState(false),done=_done[0],setDone=_done[1];
   var _msg=useState(""),msg=_msg[0],setMsg=_msg[1];
-  // Get today/upcoming classes for this profe
   var now=new Date();var limit=new Date(now);limit.setDate(limit.getDate()+7);
   var clases=[];
   profe.horarios.forEach(function(h){
@@ -510,7 +523,6 @@ function ProfeLista(props){
     var faltasSinAviso=[];var clasesExtra=[];var presentes=[];
     sel.alumnos.forEach(function(a){
       if(marks[a.alumno.id]===false){
-        // Falta sin aviso - pierde clase, NO puede recuperar
         faltasSinAviso.push(a.alumno);
         setAls(function(p){var c=p.slice();var idx=c.findIndex(function(x){return x.id===a.alumno.id});
           if(idx!==-1){
@@ -522,16 +534,14 @@ function ProfeLista(props){
     extras.forEach(function(al){
       if(marks[al.id]===true){
         clasesExtra.push(al);
-        // Clase extra - descontar una clase
         setAls(function(p){var c=p.slice();var idx=c.findIndex(function(x){return x.id===al.id});
           if(idx!==-1){
             var mk=sel.date.getFullYear()+"-"+sel.date.getMonth();
             c[idx]=Object.assign({},c[idx],{
               ex:(c[idx].ex||[]).concat({date:sel.iso,mk:mk}),
               hist:(c[idx].hist||[]).concat("📌 Clase extra "+fmtDateShort(sel.date))})}return c})}});
-    // Save lista
     setListas(function(p){return p.concat({profeId:profe.id,slotIso:sel.iso,date:sel.date,presentes:presentes.map(function(a){return a.nombre}).concat(clasesExtra.map(function(a){return a.nombre+" (extra)"})),faltas:faltasSinAviso.map(function(a){return a.nombre})})});
-    props.setLogs(function(p){return p.concat({ts:new Date().toLocaleString(),action:"Lista: "+profe.nombre+" — "+fmtDateShort(sel.date)+" — "+profe.sede})});
+    setLogs(function(p){return p.concat({ts:new Date().toLocaleString(),action:"Lista: "+profe.nombre+" — "+fmtDateShort(sel.date)+" — "+profe.sede})});
     var m2="✓ Lista enviada\n\n";
     m2+="Presentes: "+presentes.length+(clasesExtra.length?" + "+clasesExtra.length+" extra":"")+"\n";
     if(faltasSinAviso.length)m2+="Faltas sin aviso: "+faltasSinAviso.map(function(a){return a.nombre}).join(", ")+"\n";
@@ -550,17 +560,15 @@ function ProfeLista(props){
       clases.map(function(c,i){return(
         <button key={i} onClick={function(){selectClass(c)}} style={Object.assign({},bS,{marginBottom:8})}>
           {fmtDate(c.date)+" — "+c.alumnos.length+" alumno"+(c.alumnos.length!==1?"s":"")}</button>)})}</div>);
-  // Taking attendance
   var allIds=sel.alumnos.map(function(a){return a.alumno.id}).concat(extras.map(function(e){return e.id}));
   var allMarked=allIds.every(function(id){return marks[id]===true||marks[id]===false});
-  // Search for extras
   var searchResults=search.length>=2?als.filter(function(a){
     return a.nombre.toLowerCase().includes(search.toLowerCase())&&a.sede===profe.sede&&!sel.alumnos.find(function(s){return s.alumno.id===a.id})&&!extras.find(function(e){return e.id===a.id})}):[];
   return(
     <div style={{padding:20}}>
       <h3 style={{margin:"0 0 4px",color:navy,fontFamily:ft,fontWeight:700,fontSize:16}}>{fmtDate(sel.date)}</h3>
       <p style={{margin:"0 0 16px",color:grayWarm,fontSize:13,fontFamily:ft}}>{sel.alumnos.length+" esperado"+(sel.alumnos.length!==1?"s":"")}</p>
-      {sel.alumnos.map(function(a,i){var id=a.alumno.id;var v=marks[id];return(
+      {sel.alumnos.map(function(a){var id=a.alumno.id;var v=marks[id];return(
         <div key={id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",marginBottom:6,borderRadius:10,border:"1px solid "+grayBlue,background:v===true?"#f0f5e8":v===false?"#fef2f2":white}}>
           <span style={{fontFamily:ft,fontSize:14,color:navy,fontWeight:500}}>{a.alumno.nombre}<span style={{color:grayWarm,fontSize:12}}>{a.tipo==="recuperacion"?" (recup)":""}</span></span>
           <div style={{display:"flex",gap:6}}>
@@ -568,8 +576,8 @@ function ProfeLista(props){
             <button onClick={function(){toggleMark(id,false)}} style={{width:36,height:36,borderRadius:8,border:v===false?"2px solid #991b1b":"1px solid "+grayBlue,background:v===false?"#991b1b":white,color:v===false?white:navy,cursor:"pointer",fontSize:16,fontWeight:700}}>{"✗"}</button>
           </div>
         </div>)})}
-      {extras.map(function(al,i){var id=al.id;var v=marks[id];return(
-        <div key={id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",marginBottom:6,borderRadius:10,border:"1px solid #e8d4b0",background:v===true?"#fdf6ec":"#fdf6ec"}}>
+      {extras.map(function(al){var id=al.id;var v=marks[id];return(
+        <div key={id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",marginBottom:6,borderRadius:10,border:"1px solid #e8d4b0",background:"#fdf6ec"}}>
           <span style={{fontFamily:ft,fontSize:14,color:copper,fontWeight:500}}>{al.nombre} <span style={{fontSize:12}}>(extra)</span></span>
           <div style={{display:"flex",gap:6}}>
             <button onClick={function(){toggleMark(id,true)}} style={{width:36,height:36,borderRadius:8,border:v===true?"2px solid #5a6a2a":"1px solid "+grayBlue,background:v===true?"#5a6a2a":white,color:v===true?white:navy,cursor:"pointer",fontSize:16,fontWeight:700}}>{"✓"}</button>
@@ -578,7 +586,7 @@ function ProfeLista(props){
         </div>)})}
       <div style={{marginTop:12,marginBottom:12}}>
         <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Buscar alumno extra..." style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid "+grayBlue,fontSize:14,fontFamily:ft,outline:"none",background:cream,boxSizing:"border-box"}}/>
-        {searchResults.map(function(a,i){return(
+        {searchResults.map(function(a){return(
           <button key={a.id} onClick={function(){addExtra(a)}} style={{display:"block",width:"100%",textAlign:"left",padding:"8px 14px",marginTop:4,borderRadius:8,border:"1px solid #e8d4b0",background:"#fdf6ec",cursor:"pointer",fontFamily:ft,fontSize:13,color:copper}}>{"+ "+a.nombre}</button>)})}
       </div>
       <div style={{display:"flex",gap:8}}>
@@ -598,7 +606,7 @@ function EncargadaVista(props){
     var parts=h.split("-");var dia=parts[0],hora=parts[1];
     var dates=classesInMonth(dia,hora,month,year);
     dates.forEach(function(dt){
-      var expected=getAlumnosForSlot(als,sede,dia,hora,dt);
+      var expected=getCupoForSlot(als,sede,dia,hora,dt);
       clases.push({date:dt,dia:dia,hora:hora,alumnos:expected.ocupado,past:dt<now})})});
   clases.sort(function(a,b){return a.date-b.date});
   return(
@@ -699,7 +707,6 @@ function AlumnoFlow(props){
       vm.forEach(function(mk){var p=mk.split("-").map(Number);
         classesInMonth(parts[0],parts[1],p[1],p[0]).forEach(function(d){
           if(hrsUntil(d)>24){
-            // In Palermo, only show slots with at least 1 fijo
             if(isPalermo){
               var fijos=countFijosForSlot(allAls,al.sede,parts[0],parts[1],d);
               if(fijos===0)return;
@@ -710,13 +717,13 @@ function AlumnoFlow(props){
     var seen={};return alts.filter(function(a){var k=a.date.toISOString();if(seen[k])return false;seen[k]=true;return true}).slice(0,8)}
   function doCanc(ci){
     var stats=getMonthStats(al,ci.mk);var noR=stats.is5&&stats.cancTotal===0;
-    setAls(function(p){var c=p.slice();var idx=c.findIndex(function(a){return a.id===al.id});
+    setAls(function(p){var c=p.slice();var idx=c.findIndex(function(a2){return a2.id===al.id});
       c[idx]=Object.assign({},c[idx],{canc:(c[idx].canc||[]).concat({iso:ci.date.toISOString(),mk:ci.mk,noR:noR}),hist:(c[idx].hist||[]).concat((noR?"❌(5ta) ":"❌ ")+fmtDate(ci.date))});return c});
     addLog("Cancel: "+al.nombre+" — "+fmtDate(ci.date)+" — "+al.sede);
     if(noR){setCanRec(false);setCMsg("¡Gracias por cancelar tu clase! Te comentamos que esta clase no podrías recuperarla ya que era tu 5ta clase, que es de regalo siempre y cuando no faltes a ninguna clase en el mes.\n\nEso sí, si cancelás alguna de tus 4 clases restantes con 24 hs de antelación, podrás recuperarla sin problema.")}
     else{setCanRec(true);setCMsg("")}}
   function doResc(nd2,mk,gift){
-    setAls(function(p){var c=p.slice();var idx=c.findIndex(function(a){return a.id===al.id});
+    setAls(function(p){var c=p.slice();var idx=c.findIndex(function(a2){return a2.id===al.id});
       var upd={ex:(c[idx].ex||[]).concat({date:nd2.toISOString(),mk:mk||curMk}),hist:(c[idx].hist||[]).concat((gift?"🎁 ":"🔄 ")+fmtDate(nd2))};
       if(gift)upd.reg=Math.max(0,(c[idx].reg||0)-1);
       c[idx]=Object.assign({},c[idx],upd);return c});
@@ -834,6 +841,7 @@ function AlumnoFlow(props){
 }
 // ====== MAIN ======
 export default function App(){
+  var hash=useHash();
   var _als=useState(makeInit),als=_als[0],setAls=_als[1];
   var _logs=useState([]),logs=_logs[0],setLogs=_logs[1];
   var _notif=useState({}),notif=_notif[0],setNotif=_notif[1];
@@ -841,50 +849,97 @@ export default function App(){
   var _listas=useState([]),listas=_listas[0],setListas=_listas[1];
   var _payNotifs=useState([]),payNotifs=_payNotifs[0],setPayNotifs=_payNotifs[1];
   var _resetReqs=useState([]),resetReqs=_resetReqs[0],setResetReqs=_resetReqs[1];
-  var _role=useState("admin"),role=_role[0],setRole=_role[1];
+  var _adminAuth=useState(false),adminAuth=_adminAuth[0],setAdminAuth=_adminAuth[1];
+  var _adminView=useState("chat"),adminView=_adminView[0],setAdminView=_adminView[1];
   var _logged=useState(null),logged=_logged[0],setLogged=_logged[1];
   var _loggedProfe=useState(null),loggedProfe=_loggedProfe[0],setLoggedProfe=_loggedProfe[1];
   var _tab=useState("cal"),tab=_tab[0],setTab=_tab[1];
   var cur=logged?als.find(function(a){return a.id===logged.id}):null;
   var curProfe=loggedProfe?profes.find(function(p){return p.id===loggedProfe.id}):null;
   function addPayNotif(al){setPayNotifs(function(p){return p.concat({nombre:al.nombre,ts:new Date().toLocaleString()})})}
-  var btnStyle=function(active){return{padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:ft,background:active?gold:"rgba(255,255,255,0.1)",color:active?navy:grayBlue}};
+  // Determine current route
+  var route="alumna";
+  if(hash.includes("/admin"))route="admin";
+  else if(hash.includes("/profesora"))route="profesora";
+  else if(hash.includes("/alumna"))route="alumna";
+  // Admin sub-views
+  var adminBtnStyle=function(active){return{padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:ft,background:active?gold:"rgba(255,255,255,0.1)",color:active?navy:grayBlue}};
   return(
     <div style={{height:"100vh",display:"flex",flexDirection:"column",fontFamily:ft,background:cream}}>
       <div style={{background:navy,color:cream,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <span style={{fontWeight:700,fontSize:19,letterSpacing:"0.5px",fontFamily:"'Instrument Serif',serif"}}>EVES POTTERY</span>
         <div style={{display:"flex",gap:4,alignItems:"center"}}>
-          {role==="alumno"&&logged?<button onClick={function(){setLogged(null);setTab("cal")}} style={{padding:"6px 12px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontFamily:ft,background:"rgba(255,255,255,0.1)",color:grayBlue,marginRight:4}}>Salir</button>:null}
-          {role==="profe"&&loggedProfe?<button onClick={function(){setLoggedProfe(null)}} style={{padding:"6px 12px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontFamily:ft,background:"rgba(255,255,255,0.1)",color:grayBlue,marginRight:4}}>Salir</button>:null}
-          <button onClick={function(){setRole("admin");setLogged(null);setLoggedProfe(null)}} style={btnStyle(role==="admin")}>Admin</button>
-          <button onClick={function(){setRole("alumno");setLoggedProfe(null)}} style={btnStyle(role==="alumno")}>Alumno</button>
-          <button onClick={function(){setRole("profe");setLogged(null)}} style={btnStyle(role==="profe")}>Profesora</button>
+          {route==="admin"&&adminAuth?(
+            <>
+              {(adminView==="alumna"&&logged)||(adminView==="profe"&&loggedProfe)?
+                <button onClick={function(){setLogged(null);setLoggedProfe(null);setAdminView("chat")}} style={{padding:"6px 12px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontFamily:ft,background:"rgba(255,255,255,0.1)",color:grayBlue,marginRight:4}}>{"← Panel"}</button>:null}
+              <button onClick={function(){setAdminView("chat");setLogged(null);setLoggedProfe(null)}} style={adminBtnStyle(adminView==="chat")}>Admin</button>
+              <button onClick={function(){setAdminView("alumna");setLogged(null);setLoggedProfe(null)}} style={adminBtnStyle(adminView==="alumna")}>Ver alumna</button>
+              <button onClick={function(){setAdminView("profe");setLogged(null);setLoggedProfe(null)}} style={adminBtnStyle(adminView==="profe")}>Ver profe</button>
+              <button onClick={function(){setAdminAuth(false);setAdminView("chat");setLogged(null);setLoggedProfe(null)}} style={{padding:"6px 12px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontFamily:ft,background:"rgba(255,255,255,0.1)",color:"#fca5a5",marginLeft:4}}>Salir</button>
+            </>
+          ):route==="alumna"&&logged?(
+            <button onClick={function(){setLogged(null);setTab("cal")}} style={{padding:"6px 12px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontFamily:ft,background:"rgba(255,255,255,0.1)",color:grayBlue}}>Salir</button>
+          ):route==="profesora"&&loggedProfe?(
+            <button onClick={function(){setLoggedProfe(null)}} style={{padding:"6px 12px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontFamily:ft,background:"rgba(255,255,255,0.1)",color:grayBlue}}>Salir</button>
+          ):null}
         </div>
       </div>
-      {role==="admin"?(
-        <div style={{flex:1,overflow:"hidden"}}><AdminChat als={als} setAls={setAls} logs={logs} setLogs={setLogs} setNotif={setNotif} profes={profes} setProfes={setProfes} listas={listas} payNotifs={payNotifs} resetReqs={resetReqs}/></div>
-      ):role==="profe"?(!loggedProfe?(
-        <GenericLogin items={profes} setItems={setProfes} onLogin={function(p){setLoggedProfe(p)}} subtitle="Acceso profesoras"/>
-      ):curProfe?(
-        <ProfeView profe={curProfe} als={als} setAls={setAls} listas={listas} setListas={setListas} setLogs={setLogs}/>
-      ):null
-      ):role==="alumno"?(!logged?(
-        <GenericLogin items={als} setItems={setAls} onLogin={function(a){setLogged(a);setTab("cal")}} subtitle="Accedé a tus clases"/>
+      {route==="admin"?(
+        !adminAuth?<AdminLogin onLogin={function(){setAdminAuth(true)}}/>:
+        adminView==="chat"?(
+          <div style={{flex:1,overflow:"hidden"}}><AdminChat als={als} setAls={setAls} logs={logs} setLogs={setLogs} setNotif={setNotif} profes={profes} setProfes={setProfes} listas={listas} payNotifs={payNotifs} resetReqs={resetReqs}/></div>
+        ):adminView==="alumna"?(
+          !logged?(
+            <GenericLogin items={als} setItems={setAls} onLogin={function(a){setLogged(a);setTab("cal")}} subtitle="Seleccioná alumna para ver su vista" skipPw={true}/>
+          ):(
+            <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+              <div style={{padding:"10px 18px",background:white,borderBottom:"1px solid "+grayBlue}}>
+                <p style={{margin:0,fontWeight:700,color:navy,fontFamily:ft,fontSize:15}}>{cur?cur.nombre:""}</p>
+                <p style={{margin:0,color:grayWarm,fontSize:12,fontFamily:ft}}>{cur?cur.sede+" · "+cur.turno.dia+" "+cur.turno.hora:""}</p>
+              </div>
+              <div style={{display:"flex",borderBottom:"1px solid "+grayBlue}}>
+                <button onClick={function(){setTab("cal")}} style={{flex:1,padding:"11px",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:ft,background:tab==="cal"?white:cream,color:tab==="cal"?navy:grayWarm,borderBottom:tab==="cal"?"2px solid "+copper:"2px solid transparent"}}>{"📅 Mis clases"}</button>
+                <button onClick={function(){setTab("gest")}} style={{flex:1,padding:"11px",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:ft,background:tab==="gest"?white:cream,color:tab==="gest"?navy:grayWarm,borderBottom:tab==="gest"?"2px solid "+copper:"2px solid transparent"}}>{"⚡ Gestionar"}</button>
+              </div>
+              <div style={{flex:1,overflow:"auto",background:white}}>
+                {tab==="cal"&&cur?<AlumnoCal al={cur}/>:null}
+                {tab==="gest"&&cur?<AlumnoFlow al={cur} allAls={als} setAls={setAls} setLogs={setLogs} notif={notif} addPayNotif={addPayNotif}/>:null}
+              </div>
+            </div>
+          )
+        ):adminView==="profe"?(
+          !loggedProfe?(
+            <GenericLogin items={profes} setItems={setProfes} onLogin={function(p){setLoggedProfe(p)}} subtitle="Seleccioná profesora para ver su vista" skipPw={true}/>
+          ):curProfe?(
+            <ProfeView profe={curProfe} als={als} setAls={setAls} listas={listas} setListas={setListas} setLogs={setLogs}/>
+          ):null
+        ):null
+      ):route==="profesora"?(
+        !loggedProfe?(
+          <GenericLogin items={profes} setItems={setProfes} onLogin={function(p){setLoggedProfe(p)}} subtitle="Acceso profesoras"/>
+        ):curProfe?(
+          <ProfeView profe={curProfe} als={als} setAls={setAls} listas={listas} setListas={setListas} setLogs={setLogs}/>
+        ):null
       ):(
-        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-          <div style={{padding:"10px 18px",background:white,borderBottom:"1px solid "+grayBlue}}>
-            <p style={{margin:0,fontWeight:700,color:navy,fontFamily:ft,fontSize:15}}>{cur?cur.nombre:""}</p>
-            <p style={{margin:0,color:grayWarm,fontSize:12,fontFamily:ft}}>{cur?cur.sede+" · "+cur.turno.dia+" "+cur.turno.hora:""}</p>
+        !logged?(
+          <GenericLogin items={als} setItems={setAls} onLogin={function(a){setLogged(a);setTab("cal")}} subtitle="Accedé a tus clases"/>
+        ):(
+          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{padding:"10px 18px",background:white,borderBottom:"1px solid "+grayBlue}}>
+              <p style={{margin:0,fontWeight:700,color:navy,fontFamily:ft,fontSize:15}}>{cur?cur.nombre:""}</p>
+              <p style={{margin:0,color:grayWarm,fontSize:12,fontFamily:ft}}>{cur?cur.sede+" · "+cur.turno.dia+" "+cur.turno.hora:""}</p>
+            </div>
+            <div style={{display:"flex",borderBottom:"1px solid "+grayBlue}}>
+              <button onClick={function(){setTab("cal")}} style={{flex:1,padding:"11px",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:ft,background:tab==="cal"?white:cream,color:tab==="cal"?navy:grayWarm,borderBottom:tab==="cal"?"2px solid "+copper:"2px solid transparent"}}>{"📅 Mis clases"}</button>
+              <button onClick={function(){setTab("gest")}} style={{flex:1,padding:"11px",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:ft,background:tab==="gest"?white:cream,color:tab==="gest"?navy:grayWarm,borderBottom:tab==="gest"?"2px solid "+copper:"2px solid transparent"}}>{"⚡ Gestionar"}</button>
+            </div>
+            <div style={{flex:1,overflow:"auto",background:white}}>
+              {tab==="cal"&&cur?<AlumnoCal al={cur}/>:null}
+              {tab==="gest"&&cur?<AlumnoFlow al={cur} allAls={als} setAls={setAls} setLogs={setLogs} notif={notif} addPayNotif={addPayNotif}/>:null}
+            </div>
           </div>
-          <div style={{display:"flex",borderBottom:"1px solid "+grayBlue}}>
-            <button onClick={function(){setTab("cal")}} style={{flex:1,padding:"11px",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:ft,background:tab==="cal"?white:cream,color:tab==="cal"?navy:grayWarm,borderBottom:tab==="cal"?"2px solid "+copper:"2px solid transparent"}}>{"📅 Mis clases"}</button>
-            <button onClick={function(){setTab("gest")}} style={{flex:1,padding:"11px",border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:ft,background:tab==="gest"?white:cream,color:tab==="gest"?navy:grayWarm,borderBottom:tab==="gest"?"2px solid "+copper:"2px solid transparent"}}>{"⚡ Gestionar"}</button>
-          </div>
-          <div style={{flex:1,overflow:"auto",background:white}}>
-            {tab==="cal"&&cur?<AlumnoCal al={cur}/>:null}
-            {tab==="gest"&&cur?<AlumnoFlow al={cur} allAls={als} setAls={setAls} setLogs={setLogs} notif={notif} addPayNotif={addPayNotif}/>:null}
-          </div>
-        </div>
-      )):null}
+        )
+      )}
     </div>);
 }
