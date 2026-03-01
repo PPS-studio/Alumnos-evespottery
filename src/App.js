@@ -887,14 +887,13 @@ function AlumnoFlow(props) {
   function getAllAvailableSlots() {
     var sched = SCHED[al.sede]; if (!sched) return [];
     var vm = getRM(); if (!vm.length) return [];
-    var alts = []; var isPalermo = al.sede === "Palermo";
+    var alts = [];
     sched.forEach(function (key) {
       var parts = key.split("-");
       vm.forEach(function (mk) {
         var p = mk.split("-").map(Number);
         classesInMonth(parts[0], parts[1], p[1], p[0]).forEach(function (d) {
           if (hrsUntil(d) > 24) {
-            if (isPalermo) { var fijos = countFijosForSlot(allAls, al.sede, parts[0], parts[1], d); if (fijos === 0) return }
             var cupo = getCupoForSlot(allAls, al.sede, parts[0], parts[1], d);
             if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: parts[0], hora: parts[1] })
           }
