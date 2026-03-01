@@ -436,7 +436,7 @@ function AdminChat(props) {
 
 // ====== LOGIN GENERICO (con Supabase) ======
 function GenericLogin(props) {
-  var table = props.table, onLogin = props.onLogin, subtitle = props.subtitle, skipPw = props.skipPw, refreshData = props.refreshData;
+  var table = props.table, onLogin = props.onLogin, subtitle = props.subtitle, skipPw = props.skipPw, refreshData = props.refreshData, allData = props.allData;
   var _nom = useState(""), nom = _nom[0], setNom = _nom[1];
   var _pw = useState(""), pw = _pw[0], setPw = _pw[1];
   var _err = useState(""), err = _err[0], setErr = _err[1];
@@ -444,14 +444,27 @@ function GenericLogin(props) {
 
   async function doLogin() {
     setErr(""); setBusy(true);
-    var rows = await supa(table, "GET", "?nombre=ilike.%25" + encodeURIComponent(nom.trim()) + "%25" + (table === "alumnos" ? "&estado=eq.activo" : ""));
+    var searchName = nom.trim().toLowerCase();
+    if (!searchName) { setErr("Ingresá tu nombre."); setBusy(false); return }
+    // First try local data (already loaded), then fallback to full Supabase fetch
+    var found = null;
+    if (allData && allData.length) {
+      found = allData.find(function (item) { return item.nombre.toLowerCase() === searchName })
+        || allData.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
+    }
+    if (!found) {
+      var rows = await supa(table, "GET", "?order=nombre" + (table === "alumnos" ? "&estado=eq.activo" : ""));
+      if (rows && rows.length) {
+        found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName })
+          || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
+      }
+    }
     setBusy(false);
-    if (!rows || rows.length === 0) { setErr("No encontramos ese nombre."); return }
-    var item = rows[0];
-    if (skipPw) { onLogin(item); return }
-    if (!item.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
-    if (item.password !== pw) { setErr("Contraseña incorrecta."); return }
-    onLogin(item);
+    if (!found) { setErr("No encontramos ese nombre. Verificá que esté escrito igual que cuando te dieron de alta."); return }
+    if (skipPw) { onLogin(found); return }
+    if (!found.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
+    if (found.password !== pw) { setErr("Contraseña incorrecta."); return }
+    onLogin(found);
   }
 
   var iStyle = { width: "100%", padding: "12px 16px", borderRadius: 10, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, background: white, outline: "none", boxSizing: "border-box" };
@@ -1058,7 +1071,7 @@ export default function App() {
             <div style={{ flex: 1, overflow: "hidden" }}><AdminChat als={als} refreshData={refreshData} profes={profes} listas={listas} /></div>
           ) : adminView === "alumna" ? (
             !logged ? (
-              <GenericLogin table="alumnos" onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); setLogged(a || row); setTab("cal") }} subtitle="Seleccioná alumna para ver su vista" skipPw={true} refreshData={refreshData} />
+              <GenericLogin table="alumnos" allData={als} onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); setLogged(a || row); setTab("cal") }} subtitle="Seleccioná alumna para ver su vista" skipPw={true} refreshData={refreshData} />
             ) : (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ padding: "10px 18px", background: white, borderBottom: "1px solid " + grayBlue }}>
@@ -1077,20 +1090,20 @@ export default function App() {
             )
           ) : adminView === "profe" ? (
             !loggedProfe ? (
-              <GenericLogin table="profesoras" onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); setLoggedProfe(p || row) }} subtitle="Seleccioná profesora para ver su vista" skipPw={true} refreshData={refreshData} />
+              <GenericLogin table="profesoras" allData={profes} onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); setLoggedProfe(p || row) }} subtitle="Seleccioná profesora para ver su vista" skipPw={true} refreshData={refreshData} />
             ) : curProfe ? (
               <ProfeView profe={curProfe} als={als} refreshData={refreshData} listas={listas} />
             ) : null
           ) : null
       ) : route === "profesora" ? (
         !loggedProfe ? (
-          <GenericLogin table="profesoras" onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); if (p) setLoggedProfe(p); else { refreshData().then(function () { setLoggedProfe(row) }) } }} subtitle="Acceso profesoras" refreshData={refreshData} />
+          <GenericLogin table="profesoras" allData={profes} onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); if (p) setLoggedProfe(p); else { refreshData().then(function () { setLoggedProfe(row) }) } }} subtitle="Acceso profesoras" refreshData={refreshData} />
         ) : curProfe ? (
           <ProfeView profe={curProfe} als={als} refreshData={refreshData} listas={listas} />
         ) : null
       ) : (
         !logged ? (
-          <GenericLogin table="alumnos" onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); if (a) { setLogged(a); setTab("cal") } else { refreshData().then(function () { setLogged(row); setTab("cal") }) } }} subtitle="Accedé a tus clases" refreshData={refreshData} />
+          <GenericLogin table="alumnos" allData={als} onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); if (a) { setLogged(a); setTab("cal") } else { refreshData().then(function () { setLogged(row); setTab("cal") }) } }} subtitle="Accedé a tus clases" refreshData={refreshData} />
         ) : (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "10px 18px", background: white, borderBottom: "1px solid " + grayBlue }}>
