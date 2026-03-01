@@ -1012,6 +1012,7 @@ function AlumnoFlow(props) {
           <button onClick={reset} style={bS(false)}>{"Volver"}</button>
         </div>) : null}
     </div>);
+  }
 
   var availDates = getAvailableDates();
   var slotsForDate = getSlotsForDate(calDate);
