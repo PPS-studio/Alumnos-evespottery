@@ -446,25 +446,15 @@ function GenericLogin(props) {
     setErr(""); setBusy(true);
     var searchName = nom.trim().toLowerCase();
     if (!searchName) { setErr("Ingresá tu nombre."); setBusy(false); return }
-    // First try local data (already loaded), then fallback to full Supabase fetch
-    var found = null;
-    if (allData && allData.length) {
-      found = allData.find(function (item) { return item.nombre.toLowerCase() === searchName })
-        || allData.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
-    }
-    if (!found) {
-      var rows = await supa(table, "GET", "?order=nombre" + (table === "alumnos" ? "&estado=eq.activo" : ""));
-      if (rows && rows.length) {
-        found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName })
-          || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
-      }
-    }
+    var rows = await supa(table, "GET", "?order=nombre" + (table === "alumnos" ? "&estado=eq.activo" : ""));
     setBusy(false);
-    if (!found) { setErr("No encontramos ese nombre. (Buscado: '" + searchName + "', datos: " + (allData ? allData.length : "null") + " items)"); return }
+    if (!rows || rows.length === 0) { setErr("Error al conectar. Intentá de nuevo."); return }
+    var found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName })
+      || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
+    if (!found) { setErr("No encontramos ese nombre."); return }
     if (skipPw) { onLogin(found); return }
-    if (!found.password && !found.pw) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
-    var foundPw = found.password || found.pw;
-    if (foundPw !== pw) { setErr("Contraseña incorrecta."); return }
+    if (!found.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery."); return }
+    if (found.password !== pw) { setErr("Contraseña incorrecta."); return }
     onLogin(found);
   }
 
