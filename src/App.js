@@ -235,7 +235,9 @@ function AdminChat(props) {
       var filtered = filterBySede(als, sedeFilter);
       if (!filtered.length) return "No hay alumnos" + sedeLabel + ".";
       return "✦ Contraseñas" + sedeLabel + ":\n\n" + filtered.map(function (a) {
-        return "• " + a.nombre + " — " + a.sede + " — 🔑 " + (a.pw || "⚠ sin contraseña")
+        var pwVal = a.pw;
+        var display = pwVal ? pwVal : "⚠ sin contraseña (valor: " + JSON.stringify(pwVal) + ")";
+        return "• " + a.nombre + " — " + a.sede + " — 🔑 " + display
       }).join("\n") + "\n\nTotal: " + filtered.length;
     }
 
@@ -442,7 +444,7 @@ function GenericLogin(props) {
 
   async function doLogin() {
     setErr(""); setBusy(true);
-    var rows = await supa(table, "GET", "?nombre=ilike.*" + encodeURIComponent(nom.trim()) + "*" + (table === "alumnos" ? "&estado=eq.activo" : ""));
+    var rows = await supa(table, "GET", "?nombre=ilike.%25" + encodeURIComponent(nom.trim()) + "%25" + (table === "alumnos" ? "&estado=eq.activo" : ""));
     setBusy(false);
     if (!rows || rows.length === 0) { setErr("No encontramos ese nombre."); return }
     var item = rows[0];
@@ -983,16 +985,19 @@ export default function App() {
       // Auto-assign passwords to any student/prof missing one
       if (alRows) {
         for (var ai = 0; ai < alRows.length; ai++) {
-          if (!alRows[ai].password) {
+          var pw = alRows[ai].password;
+          if (!pw || pw === "" || pw === "null") {
             var newPw = genPw("eves");
-            await supa("alumnos", "PATCH", "?id=eq." + alRows[ai].id, { password: newPw });
+            var patchRes = await supa("alumnos", "PATCH", "?id=eq." + alRows[ai].id, { password: newPw });
+            console.log("Auto-assigned pw to", alRows[ai].nombre, ":", newPw, "result:", patchRes);
             alRows[ai].password = newPw;
           }
         }
       }
       if (profeRows) {
         for (var pi = 0; pi < profeRows.length; pi++) {
-          if (!profeRows[pi].password) {
+          var pwP = profeRows[pi].password;
+          if (!pwP || pwP === "" || pwP === "null") {
             var newPwP = genPw("prof");
             await supa("profesoras", "PATCH", "?id=eq." + profeRows[pi].id, { password: newPwP });
             profeRows[pi].password = newPwP;
