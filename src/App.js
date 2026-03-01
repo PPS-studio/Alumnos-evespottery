@@ -162,7 +162,7 @@ function AdminLogin(props) {
 function AdminChat(props) {
   var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Agendar clase: Nombre / día hora fecha\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -547,7 +547,124 @@ function AdminChat(props) {
       return rh;
     }
 
-    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios"
+    // CANCELAR CLASE (admin cancela por alumno)
+    if (t.startsWith("cancelar clase")) {
+      var ccMatch = txt.match(/cancelar\s*clase\s*:?\s*(.+)/i);
+      if (!ccMatch) return "Formato: cancelar clase: Nombre / fecha (ej: cancelar clase: Victoria / 6 marzo)";
+      var ccParts = ccMatch[1].split("/").map(function (s) { return s.trim() });
+      if (ccParts.length < 2) return "Formato: cancelar clase: Nombre / fecha (ej: cancelar clase: Victoria / 6 marzo)";
+      var ccIdx = findA(ccParts[0]); if (ccIdx === -1) return "✗ No encontré ese nombre.";
+      var ccAl = als[ccIdx];
+      // Parse date: "6 marzo" or "6 marzo 2026" or "6/3" or "6/3/2026"
+      var ccDateStr = ccParts[1].toLowerCase();
+      var ccDate = null;
+      var ccSlashMatch = ccDateStr.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}))?/);
+      if (ccSlashMatch) {
+        var ccY = ccSlashMatch[3] ? parseInt(ccSlashMatch[3]) : new Date().getFullYear();
+        ccDate = new Date(ccY, parseInt(ccSlashMatch[2]) - 1, parseInt(ccSlashMatch[1]));
+      } else {
+        var ccWordMatch = ccDateStr.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/);
+        if (ccWordMatch) {
+          var ccMi = MN.findIndex(function (m) { return ccWordMatch[2].includes(m.substring(0, 3)) });
+          if (ccMi === -1) return "No entendí la fecha.";
+          var ccYr = ccWordMatch[3] ? parseInt(ccWordMatch[3]) : new Date().getFullYear();
+          ccDate = new Date(ccYr, ccMi, parseInt(ccWordMatch[1]));
+        }
+      }
+      if (!ccDate) return "No entendí la fecha. Ej: 6 marzo, 6/3, 6 marzo 2026";
+      // Find the class on that date
+      var ccMk = ccDate.getFullYear() + "-" + ccDate.getMonth();
+      var ccClasses = classesInMonth(ccAl.turno.dia, ccAl.turno.hora, ccDate.getMonth(), ccDate.getFullYear());
+      var ccTarget = ccClasses.find(function (d) { return d.getDate() === ccDate.getDate() });
+      var ccIsExtra = false;
+      if (!ccTarget) {
+        // Maybe it's an extra class
+        var ccEx = (ccAl.ex || []).find(function (e) { var ed = new Date(e.date); return ed.getDate() === ccDate.getDate() && ed.getMonth() === ccDate.getMonth() && ed.getFullYear() === ccDate.getFullYear() });
+        if (ccEx) { ccTarget = new Date(ccEx.date); ccIsExtra = true }
+      }
+      if (!ccTarget) return "✗ " + ccAl.nombre + " no tiene clase el " + ccDate.getDate() + "/" + (ccDate.getMonth() + 1) + ". Su turno es " + ccAl.turno.dia + " " + ccAl.turno.hora;
+      // Check if already cancelled
+      var ccAlreadyCanc = (ccAl.canc || []).some(function (c) { return c.iso === ccTarget.toISOString() });
+      if (ccAlreadyCanc) return "✗ Esa clase ya está cancelada.";
+      if (ccIsExtra) {
+        await supa("clases_extra", "DELETE", "?alumno_id=eq." + ccAl.id + "&fecha_iso=eq." + encodeURIComponent(ccTarget.toISOString()));
+        await supa("historial", "POST", "", { alumno_id: ccAl.id, accion: "❌ Admin canceló recup " + fmtDateShort(ccTarget) });
+      } else {
+        var ccStats = getMonthStats(ccAl, ccMk);
+        var ccNoR = ccStats.is5 && ccStats.cancTotal === 0;
+        await supa("cancelaciones", "POST", "", { alumno_id: ccAl.id, fecha_iso: ccTarget.toISOString(), mes_key: ccMk, sin_recuperacion: ccNoR, sin_aviso: false, is_extra: false });
+        await supa("historial", "POST", "", { alumno_id: ccAl.id, accion: "❌ Admin canceló " + fmtDateShort(ccTarget) + (ccNoR ? " (5ta)" : "") });
+      }
+      await refreshData();
+      var ccR = "✓ Clase cancelada para " + ccAl.nombre + " — " + fmtDateShort(ccTarget);
+      if (!ccIsExtra) {
+        var ccStats2 = getMonthStats(ccAl, ccMk);
+        ccR += "\n📊 Pendientes de recuperar: " + ccStats2.pendientes;
+      }
+      return ccR;
+    }
+
+    // AGENDAR CLASE (admin agenda recuperación por alumno)
+    if (t.startsWith("agendar clase") || t.startsWith("agendar")) {
+      var agMatch = txt.match(/agendar\s*(?:clase)?\s*:?\s*(.+)/i);
+      if (!agMatch) return "Formato: agendar clase: Nombre / día hora fecha (ej: agendar: Victoria / viernes 18:30 7 marzo)";
+      var agParts = agMatch[1].split("/").map(function (s) { return s.trim() });
+      if (agParts.length < 2) return "Formato: agendar clase: Nombre / viernes 18:30 7 marzo";
+      var agIdx = findA(agParts[0]); if (agIdx === -1) return "✗ No encontré ese nombre.";
+      var agAl = als[agIdx];
+      // Parse: "viernes 18:30 7 marzo" or "viernes 18:30 7/3"
+      var agSlotStr = agParts[1].toLowerCase();
+      var agTurno = agSlotStr.match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      if (!agTurno) return "No entendí el horario. Ej: viernes 18:30 7 marzo";
+      var agDia = agTurno[1]; var agHora = agTurno[2];
+      // Parse date part (after the time)
+      var agDatePart = agSlotStr.substring(agTurno[0].length).trim();
+      var agDate = null;
+      var agSlashD = agDatePart.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}))?/);
+      if (agSlashD) {
+        var agY = agSlashD[3] ? parseInt(agSlashD[3]) : new Date().getFullYear();
+        agDate = new Date(agY, parseInt(agSlashD[2]) - 1, parseInt(agSlashD[1]));
+      } else {
+        var agWordD = agDatePart.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/);
+        if (agWordD) {
+          var agMi = MN.findIndex(function (m) { return agWordD[2].includes(m.substring(0, 3)) });
+          if (agMi === -1) return "No entendí la fecha.";
+          var agYr = agWordD[3] ? parseInt(agWordD[3]) : new Date().getFullYear();
+          agDate = new Date(agYr, agMi, parseInt(agWordD[1]));
+        }
+      }
+      if (!agDate) return "No entendí la fecha. Ej: viernes 18:30 7 marzo";
+      // Set time on date
+      var agTP = agHora.split(":"); agDate.setHours(parseInt(agTP[0]), parseInt(agTP[1]), 0, 0);
+      var agMk = agDate.getFullYear() + "-" + agDate.getMonth();
+      // Check: does this student have pending recoveries or gift classes?
+      var agNow = new Date();
+      var agCurMk = agNow.getFullYear() + "-" + agNow.getMonth();
+      var agNd = new Date(agNow.getFullYear(), agNow.getMonth() + 1, 1);
+      var agNxtMk = agNd.getFullYear() + "-" + agNd.getMonth();
+      var agPend = 0;
+      [agCurMk, agNxtMk].forEach(function (mk) {
+        var st = getMonthStats(agAl, mk);
+        agPend += st.pendientes;
+      });
+      var agGift = agAl.reg || 0;
+      if (agPend === 0 && agGift === 0) {
+        // Check all classes - are they all used?
+        return "✗ " + agAl.nombre + " no tiene clases pendientes de recuperar ni regalos.\nPrimero cancelá una clase con: cancelar clase: " + agAl.nombre + " / fecha";
+      }
+      // Check cupo
+      var agCupo = getCupoForSlot(als, agAl.sede, agDia, agHora, agDate);
+      if (agCupo.libre <= 0) return "✗ No hay cupo en " + agDia + " " + agHora + " el " + agDate.getDate() + "/" + (agDate.getMonth() + 1) + " (cupo: " + agCupo.ocupado + "/" + MAX_CUPO + ")";
+      // Book the class
+      var agTipo = agPend > 0 ? "recuperacion" : "regalo";
+      await supa("clases_extra", "POST", "", { alumno_id: agAl.id, fecha_iso: agDate.toISOString(), mes_key: agMk, tipo: agTipo });
+      await supa("historial", "POST", "", { alumno_id: agAl.id, accion: (agTipo === "regalo" ? "🎁 " : "🔄 ") + "Admin agendó " + fmtDateShort(agDate) });
+      if (agTipo === "regalo") await supa("alumnos", "PATCH", "?id=eq." + agAl.id, { clase_regalo: Math.max(0, agGift - 1) });
+      await refreshData();
+      return "✓ Clase agendada para " + agAl.nombre + "\n📅 " + fmtDateShort(agDate) + " — " + agAl.sede + "\nTipo: " + (agTipo === "regalo" ? "🎁 regalo" : "🔄 recuperación") + "\nCupo restante: " + (agCupo.libre - 1);
+    }
+
+    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios, cancelar clase, agendar clase"
   }
 
   async function send() {
