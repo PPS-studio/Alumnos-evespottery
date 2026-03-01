@@ -142,7 +142,7 @@ function AdminLogin(props) {
 function AdminChat(props) {
   var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas;
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Ver contraseñas [P|SI]\n• Asignar contraseñas (genera pw a quienes no tienen)\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -203,7 +203,7 @@ function AdminChat(props) {
     // ASIGNAR CONTRASEÑAS (bulk: genera pw a quienes no tienen)
     if (t.startsWith("asignar contra") || t.startsWith("asignar pw") || t.startsWith("generar contra") || t.startsWith("generar pw")) {
       var sinPw = als.filter(function (a) { return !a.pw });
-      if (!sinPw.length) return "✓ Todos los alumnos ya tienen contraseña.";
+      if (!sinPw.length) return "✓ Todos los alumnos ya tienen contraseña. Si querés regenerar todas, usá: resetear todas";
       var results = [];
       for (var si = 0; si < sinPw.length; si++) {
         var al = sinPw[si];
@@ -213,6 +213,21 @@ function AdminChat(props) {
       }
       await refreshData();
       return "✓ Contraseñas asignadas (" + results.length + "):\n\n" + results.join("\n");
+    }
+
+    // RESETEAR TODAS LAS CONTRASEÑAS
+    if (t.startsWith("resetear todas") || t.startsWith("reset todas")) {
+      var targetList = filterBySede(als, sedeFilter);
+      if (!targetList.length) return "No hay alumnos" + sedeLabel + ".";
+      var results2 = [];
+      for (var ri = 0; ri < targetList.length; ri++) {
+        var alR = targetList[ri];
+        var newPwR = genPw("eves");
+        await supa("alumnos", "PATCH", "?id=eq." + alR.id, { password: newPwR });
+        results2.push("• " + alR.nombre + " — " + alR.sede + " → 🔑 " + newPwR);
+      }
+      await refreshData();
+      return "✓ Contraseñas regeneradas" + sedeLabel + " (" + results2.length + "):\n\n" + results2.join("\n");
     }
 
     // VER CONTRASEÑAS
@@ -427,7 +442,7 @@ function GenericLogin(props) {
 
   async function doLogin() {
     setErr(""); setBusy(true);
-    var rows = await supa(table, "GET", "?nombre=ilike." + encodeURIComponent(nom.trim()) + (table === "alumnos" ? "&estado=eq.activo" : ""));
+    var rows = await supa(table, "GET", "?nombre=ilike.*" + encodeURIComponent(nom.trim()) + "*" + (table === "alumnos" ? "&estado=eq.activo" : ""));
     setBusy(false);
     if (!rows || rows.length === 0) { setErr("No encontramos ese nombre."); return }
     var item = rows[0];
@@ -965,6 +980,25 @@ export default function App() {
         supa("clases_extra", "GET"),
         supa("listas", "GET")
       ]);
+      // Auto-assign passwords to any student/prof missing one
+      if (alRows) {
+        for (var ai = 0; ai < alRows.length; ai++) {
+          if (!alRows[ai].password) {
+            var newPw = genPw("eves");
+            await supa("alumnos", "PATCH", "?id=eq." + alRows[ai].id, { password: newPw });
+            alRows[ai].password = newPw;
+          }
+        }
+      }
+      if (profeRows) {
+        for (var pi = 0; pi < profeRows.length; pi++) {
+          if (!profeRows[pi].password) {
+            var newPwP = genPw("prof");
+            await supa("profesoras", "PATCH", "?id=eq." + profeRows[pi].id, { password: newPwP });
+            profeRows[pi].password = newPwP;
+          }
+        }
+      }
       var builtAls = (alRows || []).map(function (r) { return buildAlumnoFromRow(r, pagos || [], cancs || [], extras || []) });
       var builtProfes = (profeRows || []).map(buildProfeFromRow);
       setAls(builtAls);
