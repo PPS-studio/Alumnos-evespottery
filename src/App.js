@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+  import { useState, useEffect, useRef, useCallback } from "react";
 
 // ====== SUPABASE CONFIG ======
 var SUPA_URL = "https://rwlfbbmbustxpuvbakbo.supabase.co";
@@ -446,12 +446,15 @@ function GenericLogin(props) {
     setErr(""); setBusy(true);
     var searchName = nom.trim().toLowerCase();
     if (!searchName) { setErr("Ingresá tu nombre."); setBusy(false); return }
-    var rows = await supa(table, "GET", "?order=nombre" + (table === "alumnos" ? "&estado=eq.activo" : ""));
+    var queryParams = "?order=nombre&limit=1000" + (table === "alumnos" ? "&estado=eq.activo" : "");
+    console.log("Login query:", table, queryParams);
+    var rows = await supa(table, "GET", queryParams);
+    console.log("Login rows:", rows ? rows.length : "null", rows ? rows.map(function(r){return r.nombre}).join(", ") : "");
     setBusy(false);
     if (!rows || rows.length === 0) { setErr("Error al conectar. Intentá de nuevo."); return }
     var found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName })
       || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
-    if (!found) { setErr("No encontramos ese nombre."); return }
+    if (!found) { setErr("No encontramos '" + searchName + "' entre " + rows.length + " alumnos."); return }
     if (skipPw) { onLogin(found); return }
     if (!found.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery."); return }
     if (found.password !== pw) { setErr("Contraseña incorrecta."); return }
