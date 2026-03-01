@@ -1,4 +1,4 @@
-  import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // ====== SUPABASE CONFIG ======
 var SUPA_URL = "https://rwlfbbmbustxpuvbakbo.supabase.co";
@@ -39,6 +39,25 @@ function hrsUntil(d) { return (d.getTime() - Date.now()) / 3600000 }
 function fmtDate(d) { var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; var mn = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]; return dn[d.getDay()] + " " + d.getDate() + " " + mn[d.getMonth()] + " · " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") }
 function fmtDateShort(d) { var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; return dn[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") }
 function genPw(prefix) { return prefix + String(Math.floor(1000 + Math.random() * 9000)) }
+function fmtMoney(n) { return "$" + Number(n).toLocaleString("es-AR") }
+function getCuotaInfo(cuotas, sede, frecuencia) {
+  if (!cuotas || !cuotas.length) return null;
+  var day = new Date().getDate();
+  var results = cuotas.filter(function (c) { return c.sede === sede && c.frecuencia === frecuencia });
+  if (!results.length) return null;
+  var periodo = day <= 7 ? "hasta_dia_7" : day <= 14 ? "dia_8_al_14" : "desde_dia_15";
+  var periodoLabel = day <= 7 ? "hasta el 7" : day <= 14 ? "del 8 al 14" : "desde el 15";
+  if (frecuencia === "2x") {
+    var row = results[0];
+    return { efectivo: row[periodo], transferencia: row[periodo], periodo: periodoLabel, is2x: true, allRows: results,
+      nextAumento: day <= 7 ? { fecha: 8, efectivo: row.dia_8_al_14, transferencia: row.dia_8_al_14 } : day <= 14 ? { fecha: 15, efectivo: row.desde_dia_15, transferencia: row.desde_dia_15 } : null }
+  }
+  var efRow = results.find(function (r) { return r.forma_pago === "efectivo" });
+  var trRow = results.find(function (r) { return r.forma_pago === "transferencia" });
+  if (!efRow || !trRow) return null;
+  return { efectivo: efRow[periodo], transferencia: trRow[periodo], periodo: periodoLabel, is2x: false, allRows: results,
+    nextAumento: day <= 7 ? { fecha: 8, efectivo: efRow.dia_8_al_14, transferencia: trRow.dia_8_al_14 } : day <= 14 ? { fecha: 15, efectivo: efRow.desde_dia_15, transferencia: trRow.desde_dia_15 } : null }
+}
 
 // ====== DATA HELPERS ======
 function buildAlumnoFromRow(row, pagos, cancs, extras) {
@@ -50,7 +69,7 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
   var ex = extras.filter(function (e) { return e.alumno_id === row.id }).map(function (e) {
     return { date: e.fecha_iso, mk: e.mes_key, tipo: e.tipo }
   });
-  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0 }
+  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x" }
 }
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
@@ -140,9 +159,9 @@ function AdminLogin(props) {
 
 // ====== ADMIN CHAT ======
 function AdminChat(props) {
-  var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas;
+  var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [];
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -408,7 +427,60 @@ function AdminChat(props) {
       return "✓ " + al8.nombre + " — " + MN[parsed2.month] + " " + parsed2.year + " (" + tc + " clases" + (tc === 5 ? " — 5ta regalo" : "") + ")\nDerecho a " + CLASES_BASE + " clases efectivas."
     }
 
-    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, asignar contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones"
+    // VER CUOTAS
+    if (t.includes("ver cuota") || t === "cuotas" || t.includes("precios")) {
+      if (!cuotas.length) return "No hay cuotas cargadas.";
+      var r5 = "✦ Cuotas actuales:\n\n";
+      ["San Isidro", "Palermo"].forEach(function (sede) {
+        r5 += "📍 " + sede + ":\n";
+        ["1x", "2x"].forEach(function (freq) {
+          var rows = cuotas.filter(function (c) { return c.sede === sede && c.frecuencia === freq });
+          if (!rows.length) return;
+          r5 += "  " + (freq === "1x" ? "1x/semana" : "2x/semana") + ":\n";
+          rows.forEach(function (row) {
+            r5 += "    " + row.forma_pago + ": " + fmtMoney(row.hasta_dia_7) + " / " + fmtMoney(row.dia_8_al_14) + " / " + fmtMoney(row.desde_dia_15) + "\n";
+          });
+        });
+        r5 += "\n";
+      });
+      r5 += "(formato: hasta 7 / 8-14 / desde 15)";
+      return r5;
+    }
+
+    // FRECUENCIA (cambiar alumna a 2x)
+    if (t.startsWith("frecuencia") || t.startsWith("freq")) {
+      var fMatch = txt.match(/(?:frecuencia|freq)\s*:?\s*(.+?)\s*[\/\-]\s*(1x|2x)/i);
+      if (!fMatch) return "Formato: frecuencia: Nombre / 2x";
+      var fName = fMatch[1].trim(); var fVal = fMatch[2];
+      var fIdx = findA(fName); if (fIdx === -1) return "✗ No encontré ese nombre.";
+      var fAl = als[fIdx];
+      await supa("alumnos", "PATCH", "?id=eq." + fAl.id, { frecuencia: fVal });
+      await refreshData();
+      return "✓ " + fAl.nombre + " → frecuencia: " + fVal + "/semana";
+    }
+
+    // ACTUALIZAR CUOTA
+    if (t.startsWith("cuota") && t.includes(":")) {
+      // cuota: San Isidro / 1x / efectivo / 95000 / 101000 / 108000
+      var cMatch = txt.match(/cuota\s*:?\s*(.+)/i);
+      if (!cMatch) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
+      var cParts = cMatch[1].split("/").map(function (s) { return s.trim() });
+      if (cParts.length < 6) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
+      var cSede = cParts[0].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
+      var cFreq = cParts[1]; var cForma = cParts[2].toLowerCase();
+      var cV1 = parseInt(cParts[3]), cV2 = parseInt(cParts[4]), cV3 = parseInt(cParts[5]);
+      if (isNaN(cV1) || isNaN(cV2) || isNaN(cV3)) return "Los valores deben ser números.";
+      var existing = cuotas.find(function (c) { return c.sede === cSede && c.frecuencia === cFreq && c.forma_pago === cForma });
+      if (existing) {
+        await supa("cuotas", "PATCH", "?id=eq." + existing.id, { hasta_dia_7: cV1, dia_8_al_14: cV2, desde_dia_15: cV3 });
+      } else {
+        await supa("cuotas", "POST", "", { sede: cSede, frecuencia: cFreq, forma_pago: cForma, hasta_dia_7: cV1, dia_8_al_14: cV2, desde_dia_15: cV3 });
+      }
+      await refreshData();
+      return "✓ Cuota actualizada: " + cSede + " / " + cFreq + " / " + cForma + "\n  " + fmtMoney(cV1) + " / " + fmtMoney(cV2) + " / " + fmtMoney(cV3);
+    }
+
+    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, asignar contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia"
   }
 
   async function send() {
@@ -447,14 +519,12 @@ function GenericLogin(props) {
     var searchName = nom.trim().toLowerCase();
     if (!searchName) { setErr("Ingresá tu nombre."); setBusy(false); return }
     var queryParams = "?order=nombre&limit=1000" + (table === "alumnos" ? "&estado=eq.activo" : "");
-    console.log("Login query:", table, queryParams);
     var rows = await supa(table, "GET", queryParams);
-    console.log("Login rows:", rows ? rows.length : "null", rows ? rows.map(function(r){return r.nombre}).join(", ") : "");
     setBusy(false);
     if (!rows || rows.length === 0) { setErr("Error al conectar. Intentá de nuevo."); return }
     var found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName })
       || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
-    if (!found) { setErr("No encontramos '" + searchName + "' entre " + rows.length + " alumnos."); return }
+    if (!found) { setErr("No encontramos ese nombre."); return }
     if (skipPw) { onLogin(found); return }
     if (!found.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery."); return }
     if (found.password !== pw) { setErr("Contraseña incorrecta."); return }
@@ -687,18 +757,45 @@ function EncargadaVista(props) {
 
 // ====== ALUMNO CALENDAR ======
 function AlumnoCal(props) {
-  var al = props.al;
-  var pm = Object.keys(al.mp || {});
-  if (!pm.length) return (<div style={{ padding: 36, textAlign: "center" }}><p style={{ fontSize: 44, opacity: 0.5 }}>{"🔒"}</p><h3 style={{ color: navy, fontFamily: ft }}>Calendario no disponible</h3><p style={{ color: grayWarm, fontSize: 14, fontFamily: ft }}>No tenés meses pagados.</p></div>);
+  var al = props.al; var cuotas = props.cuotas || [];
+  var now = new Date(); var curMk = now.getFullYear() + "-" + now.getMonth();
+  var paidCurrent = !!(al.mp || {})[curMk];
+  var cuotaInfo = getCuotaInfo(cuotas, al.sede, al.frecuencia || "1x");
+  // Build classes for current month even if not paid
   var all = [];
-  pm.forEach(function (mk) { var p = mk.split("-").map(Number); var mc = classesInMonth(al.turno.dia, al.turno.hora, p[1], p[0]); var cm = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { if (!cm.some(function (c) { return c.iso === d.toISOString() })) all.push({ date: d, extra: false, tot: mc.length }) }) });
+  var curMonth = now.getMonth(); var curYear = now.getFullYear();
+  var curClasses = classesInMonth(al.turno.dia, al.turno.hora, curMonth, curYear);
+  var cm = (al.canc || []).filter(function (c) { return c.mk === curMk });
+  curClasses.forEach(function (d) { if (!cm.some(function (c) { return c.iso === d.toISOString() })) all.push({ date: d, extra: false, tot: curClasses.length }) });
+  // Also add classes from paid months (other than current)
+  var pm = Object.keys(al.mp || {});
+  pm.forEach(function (mk) {
+    if (mk === curMk) return; // already added
+    var p = mk.split("-").map(Number);
+    var mc = classesInMonth(al.turno.dia, al.turno.hora, p[1], p[0]);
+    var cmk = (al.canc || []).filter(function (c) { return c.mk === mk });
+    mc.forEach(function (d) { if (!cmk.some(function (c) { return c.iso === d.toISOString() })) all.push({ date: d, extra: false, tot: mc.length }) })
+  });
   (al.ex || []).forEach(function (e) { all.push({ date: new Date(e.date), extra: true, tot: 0 }) });
   all.sort(function (a, b) { return a.date - b.date });
+  // Stats for paid months only
   var statsBlocks = pm.map(function (mk) { var stats = getMonthStats(al, mk); var p = mk.split("-").map(Number); return { label: MN[p[1]] + " " + p[0], stats: stats, mk: mk } });
   return (
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 2px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Tus clases</h3>
       <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{al.turno.dia + " " + al.turno.hora + " · " + al.sede}</p>
+      {!paidCurrent ? (
+        <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5", marginBottom: 14 }}>
+          <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 14, fontFamily: ft }}>{"⚠ Por favor realizá el pago de " + MN[curMonth] + " para habilitar todas las funciones"}</p>
+          {cuotaInfo ? (
+            <div style={{ marginTop: 10, fontSize: 13, fontFamily: ft, color: "#991b1b", lineHeight: 1.7 }}>
+              <p style={{ margin: "4px 0" }}>{"💵 Efectivo: " + fmtMoney(cuotaInfo.efectivo)}</p>
+              <p style={{ margin: "4px 0" }}>{"🏦 Transferencia: " + fmtMoney(cuotaInfo.transferencia)}</p>
+              {cuotaInfo.nextAumento ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#b91c1c", fontStyle: "italic" }}>{"(A partir del " + cuotaInfo.nextAumento.fecha + ": efectivo " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transferencia " + fmtMoney(cuotaInfo.nextAumento.transferencia) + ")"}</p> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {statsBlocks.map(function (sb) { return (<div key={sb.mk} style={{ background: "#f8f6f2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid " + grayBlue }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{sb.label}</span><span style={{ fontSize: 12, color: copper, fontFamily: ft, fontWeight: 600 }}>{sb.stats.clasesEfectivas + "/" + CLASES_BASE + " clases"}</span></div>{sb.stats.pendientes > 0 ? <div style={{ background: "#fdf6ec", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: copper, fontFamily: ft, border: "1px solid #e8d4b0" }}>{"🔄 " + sb.stats.pendientes + " clase(s) pendiente(s) de recuperar"}</div> : null}{sb.stats.is5 && sb.stats.cancTotal === 0 ? <div style={{ fontSize: 12, color: olive, fontFamily: ft, marginTop: 4 }}>{"✦ 5ta clase regalo activa"}</div> : null}</div>) })}
       {al.reg > 0 ? <div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: copper, fontFamily: ft }}>{"🎁 Tenés " + al.reg + " clase(s) de regalo"}</div> : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -744,8 +841,11 @@ function MiniCalendar(props) {
 
 // ====== ALUMNO FLOW ======
 function AlumnoFlow(props) {
-  var al = props.al, allAls = props.allAls, refreshData = props.refreshData;
+  var al = props.al, allAls = props.allAls, refreshData = props.refreshData, cuotas = props.cuotas || [];
   var pm = Object.keys(al.mp || {}); var paid = pm.length > 0;
+  var now = new Date(); var curMk = now.getFullYear() + "-" + now.getMonth();
+  var paidCurrent = !!(al.mp || {})[curMk];
+  var cuotaInfo = getCuotaInfo(cuotas, al.sede, al.frecuencia || "1x");
   var _st = useState("menu"), step = _st[0], setStep = _st[1];
   var _sel = useState(null), sel = _sel[0], setSel = _sel[1];
   var _cm = useState(""), cMsg = _cm[0], setCMsg = _cm[1];
@@ -856,15 +956,61 @@ function AlumnoFlow(props) {
 
   var pendBadge = totalPendientes > 0 ? (<div style={{ background: "#fdf6ec", borderRadius: 10, padding: "10px 14px", border: "1px solid #e8d4b0", marginBottom: 4 }}><span style={{ fontSize: 14, color: copper, fontFamily: ft, fontWeight: 600 }}>{"🔄 " + totalPendientes + " clase(s) pendiente(s) de recuperar"}</span></div>) : null;
 
-  if (!paid) return (
-    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, height: "100%", justifyContent: "center" }}>
-      <div style={{ background: white, borderRadius: 14, padding: 28, textAlign: "center", border: "1px solid " + gold }}>
-        <p style={{ fontSize: 44, margin: "0 0 10px" }}>{"⏸"}</p>
-        <h3 style={{ color: navy, margin: "0 0 8px", fontFamily: ft }}>Acceso pausado</h3>
-        <p style={{ color: grayWarm, fontSize: 14, margin: "0 0 24px", fontFamily: ft }}>Falta confirmar el pago.</p>
-        {step === "menu" ? <button onClick={function () { doPayNotif(); setStep("ps") }} disabled={busy} style={bP}>{busy ? "Enviando..." : "Ya hice el pago"}</button> : null}
-        {step === "ps" ? (<div style={{ background: "#f0f5e8", borderRadius: 10, padding: 16 }}><p style={{ margin: 0, color: "#5a6a2a", fontSize: 14, fontFamily: ft }}>{"👍 ¡Gracias! Le avisamos al equipo."}</p><div style={{ marginTop: 12 }}><button onClick={function () { setStep("menu") }} style={bS(false)}>{"← Volver"}</button></div></div>) : null}
+  if (!paidCurrent) {
+    // Unpaid current month: can cancel classes but NOT reschedule/recover
+    var upUnpaid = [];
+    // Show current month classes even without payment
+    var curClasses = classesInMonth(al.turno.dia, al.turno.hora, now.getMonth(), now.getFullYear());
+    var curCanc = (al.canc || []).filter(function (c) { return c.mk === curMk });
+    curClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !curCanc.some(function (c) { return c.iso === d.toISOString() })) upUnpaid.push({ date: d, mk: curMk, tot: curClasses.length, cc: curCanc.length }) });
+
+    return (
+    <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", height: "100%" }}>
+      <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5" }}>
+        <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 14, fontFamily: ft }}>{"⚠ No obtuvimos tu pago de " + MN[now.getMonth()] + " todavía."}</p>
+        <p style={{ margin: "6px 0 0", color: "#991b1b", fontSize: 13, fontFamily: ft, lineHeight: 1.5 }}>Podés cancelar clases, pero no reagendar ni recuperar hasta regularizar el pago.</p>
+        {cuotaInfo ? (
+          <div style={{ marginTop: 10, background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "10px 12px" }}>
+            <p style={{ margin: 0, fontSize: 13, fontFamily: ft, color: "#991b1b", fontWeight: 600 }}>Cuota {al.frecuencia === "2x" ? "(2x/semana)" : "(1x/semana)"}:</p>
+            <p style={{ margin: "4px 0", fontSize: 13, fontFamily: ft, color: "#991b1b" }}>{"💵 Efectivo: " + fmtMoney(cuotaInfo.efectivo)}</p>
+            <p style={{ margin: "4px 0", fontSize: 13, fontFamily: ft, color: "#991b1b" }}>{"🏦 Transferencia: " + fmtMoney(cuotaInfo.transferencia)}</p>
+            {cuotaInfo.nextAumento ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#b91c1c", fontStyle: "italic" }}>{"(A partir del " + cuotaInfo.nextAumento.fecha + ": efectivo " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transferencia " + fmtMoney(cuotaInfo.nextAumento.transferencia) + ")"}</p> : null}
+          </div>
+        ) : null}
       </div>
+      {step === "menu" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button onClick={function () { doPayNotif(); setStep("ps") }} disabled={busy} style={bP}>{busy ? "Enviando..." : "✓ Ya hice el pago"}</button>
+          {upUnpaid.length > 0 ? <button onClick={function () { setStep("cp_unpaid") }} style={bS(false)}>{"❌  Cancelar una clase"}</button> : null}
+          <button disabled style={bS(true)}>{"🔄  Recuperar una clase (pago pendiente)"}</button>
+          <button disabled style={bS(true)}>{"🎁  Usar clase de regalo (pago pendiente)"}</button>
+        </div>) : null}
+      {step === "ps" ? (<div style={{ background: "#f0f5e8", borderRadius: 10, padding: 16 }}><p style={{ margin: 0, color: "#5a6a2a", fontSize: 14, fontFamily: ft }}>{"👍 ¡Gracias! Le avisamos al equipo. Cuando se confirme el pago se habilitarán todas las funciones."}</p><div style={{ marginTop: 12 }}><button onClick={function () { setStep("menu") }} style={bS(false)}>{"← Volver"}</button></div></div>) : null}
+      {step === "cp_unpaid" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <p style={{ margin: 0, color: navy, fontWeight: 700, fontFamily: ft }}>{"¿Qué clase querés cancelar?"}</p>
+          {upUnpaid.map(function (cl, i) {
+            var h = hrsUntil(cl.date); var blocked = h < 24;
+            return <button key={i} disabled={blocked} onClick={function () { if (blocked) return; setSel(cl); setStep("cc_unpaid") }} style={bS(blocked)}>{fmtDate(cl.date) + (blocked ? "  ·  ⚠ menos de 24h" : "")}</button>
+          })}
+          <button onClick={reset} style={bS(false)}>{"← Volver"}</button>
+        </div>) : null}
+      {step === "cc_unpaid" && sel ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <p style={{ margin: 0, color: navy, fontWeight: 700, fontFamily: ft }}>{"¿Confirmás cancelar?"}</p>
+          <div style={{ background: "#fdf6ec", borderRadius: 10, padding: 14, textAlign: "center", fontSize: 15, color: copper, fontWeight: 600, fontFamily: ft, border: "1px solid #e8d4b0" }}>{fmtDate(sel.date)}</div>
+          <p style={{ margin: 0, fontSize: 13, color: grayWarm, fontFamily: ft }}>{"⚠ No podrás recuperar esta clase hasta regularizar el pago."}</p>
+          <button disabled={busy} onClick={function () { doCanc(sel).then(function () { setStep("cd_unpaid") }) }} style={bD}>{busy ? "Cancelando..." : "Sí, cancelar"}</button>
+          <button onClick={function () { setStep("cp_unpaid") }} style={bS(false)}>{"No, volver"}</button>
+        </div>) : null}
+      {step === "cd_unpaid" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ background: "#f0f5e8", borderRadius: 12, padding: 20, textAlign: "center", border: "1px solid #b5c48a" }}>
+            <p style={{ fontSize: 36, margin: 0 }}>{"✓"}</p>
+            <p style={{ margin: "8px 0 0", color: navy, fontWeight: 700, fontFamily: ft, fontSize: 16 }}>Clase cancelada</p>
+            <p style={{ margin: "4px 0 0", color: grayWarm, fontSize: 13, fontFamily: ft }}>{"Cuando regularices el pago, podrás recuperarla."}</p></div>
+          <button onClick={reset} style={bS(false)}>{"Volver"}</button>
+        </div>) : null}
     </div>);
 
   var availDates = getAvailableDates();
@@ -972,6 +1118,7 @@ export default function App() {
   var _als = useState([]), als = _als[0], setAls = _als[1];
   var _profes = useState([]), profes = _profes[0], setProfes = _profes[1];
   var _listas = useState([]), listas = _listas[0], setListas = _listas[1];
+  var _cuotas = useState([]), cuotas = _cuotas[0], setCuotas = _cuotas[1];
   var _loading = useState(true), loading = _loading[0], setLoading = _loading[1];
   var _adminAuth = useState(false), adminAuth = _adminAuth[0], setAdminAuth = _adminAuth[1];
   var _adminView = useState("chat"), adminView = _adminView[0], setAdminView = _adminView[1];
@@ -981,13 +1128,14 @@ export default function App() {
 
   var loadData = useCallback(async function () {
     try {
-      var [alRows, profeRows, pagos, cancs, extras, listasRows] = await Promise.all([
+      var [alRows, profeRows, pagos, cancs, extras, listasRows, cuotasRows] = await Promise.all([
         supa("alumnos", "GET", "?estado=eq.activo&order=nombre"),
         supa("profesoras", "GET", "?order=nombre"),
         supa("meses_pagados", "GET"),
         supa("cancelaciones", "GET"),
         supa("clases_extra", "GET"),
-        supa("listas", "GET")
+        supa("listas", "GET"),
+        supa("cuotas", "GET")
       ]);
       // Auto-assign passwords to any student/prof missing one
       if (alRows) {
@@ -1016,6 +1164,7 @@ export default function App() {
       setAls(builtAls);
       setProfes(builtProfes);
       setListas(listasRows || []);
+      setCuotas(cuotasRows || []);
     } catch (e) { console.error("Load error:", e) }
     setLoading(false);
   }, []);
@@ -1062,7 +1211,7 @@ export default function App() {
       {route === "admin" ? (
         !adminAuth ? <AdminLogin onLogin={function () { setAdminAuth(true) }} /> :
           adminView === "chat" ? (
-            <div style={{ flex: 1, overflow: "hidden" }}><AdminChat als={als} refreshData={refreshData} profes={profes} listas={listas} /></div>
+            <div style={{ flex: 1, overflow: "hidden" }}><AdminChat als={als} refreshData={refreshData} profes={profes} listas={listas} cuotas={cuotas} /></div>
           ) : adminView === "alumna" ? (
             !logged ? (
               <GenericLogin table="alumnos" allData={als} onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); setLogged(a || row); setTab("cal") }} subtitle="Seleccioná alumna para ver su vista" skipPw={true} refreshData={refreshData} />
@@ -1077,8 +1226,8 @@ export default function App() {
                   <button onClick={function () { setTab("gest") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "gest" ? white : cream, color: tab === "gest" ? navy : grayWarm, borderBottom: tab === "gest" ? "2px solid " + copper : "2px solid transparent" }}>{"⚡ Gestionar"}</button>
                 </div>
                 <div style={{ flex: 1, overflow: "auto", background: white }}>
-                  {tab === "cal" && cur ? <AlumnoCal al={cur} /> : null}
-                  {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} /> : null}
+                  {tab === "cal" && cur ? <AlumnoCal al={cur} cuotas={cuotas} /> : null}
+                  {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} /> : null}
                 </div>
               </div>
             )
@@ -1109,8 +1258,8 @@ export default function App() {
               <button onClick={function () { setTab("gest") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "gest" ? white : cream, color: tab === "gest" ? navy : grayWarm, borderBottom: tab === "gest" ? "2px solid " + copper : "2px solid transparent" }}>{"⚡ Gestionar"}</button>
             </div>
             <div style={{ flex: 1, overflow: "auto", background: white }}>
-              {tab === "cal" && cur ? <AlumnoCal al={cur} /> : null}
-              {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} /> : null}
+              {tab === "cal" && cur ? <AlumnoCal al={cur} cuotas={cuotas} /> : null}
+              {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} /> : null}
             </div>
           </div>
         )
