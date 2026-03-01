@@ -91,14 +91,15 @@ function getMonthStats(al, mk) {
   if (is5 && cancThisMonth.length === 0) clasesEfectivas = 5;
   return { totalInMonth: totalInMonth, is5: is5, cancTotal: cancThisMonth.length, cancSinRecup: cancSinRecup, cancConRecup: cancConRecup, recuperaciones: recThisMonth.length, pendientes: pendientes, clasesEfectivas: clasesEfectivas, puedeRecuperar: pendientes > 0 && clasesEfectivas < CLASES_BASE };
 }
-function getCupoForSlot(allAls, sede, dia, hora, fecha) {
+function getCupoForSlot(allAls, sede, dia, hora, fecha, maxCupo) {
   var dateStr = fecha.toISOString(); var fijos = 0; var recups = 0;
   allAls.forEach(function (a) {
     if (a.sede !== sede) return;
     if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) fijos++ }
     (a.ex || []).forEach(function (e) { if (e.date === dateStr) recups++ })
   });
-  return { ocupado: fijos + recups, libre: MAX_CUPO - fijos - recups };
+  var cap = maxCupo || MAX_CUPO;
+  return { ocupado: fijos + recups, libre: cap - fijos - recups };
 }
 function getAlumnosForSlot(allAls, sede, dia, hora, fecha) {
   var dateStr = fecha.toISOString(); var result = [];
@@ -112,8 +113,8 @@ function getAlumnosForSlot(allAls, sede, dia, hora, fecha) {
   return result;
 }
 function countFijosForSlot(allAls, sede, dia, hora, fecha) {
-  var dateStr = fecha.toISOString(); var mk = fecha.getFullYear() + "-" + fecha.getMonth(); var count = 0;
-  allAls.forEach(function (a) { if (a.sede !== sede) return; if (!(a.mp || {})[mk]) return; if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) count++ } });
+  var dateStr = fecha.toISOString(); var count = 0;
+  allAls.forEach(function (a) { if (a.sede !== sede) return; if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) count++ } });
   return count;
 }
 
@@ -159,9 +160,9 @@ function AdminLogin(props) {
 
 // ====== ADMIN CHAT ======
 function AdminChat(props) {
-  var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [];
+  var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -480,7 +481,73 @@ function AdminChat(props) {
       return "✓ Cuota actualizada: " + cSede + " / " + cFreq + " / " + cForma + "\n  " + fmtMoney(cV1) + " / " + fmtMoney(cV2) + " / " + fmtMoney(cV3);
     }
 
-    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, asignar contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia"
+    // ABRIR HORARIO
+    if (t.startsWith("abrir horario") || t.startsWith("abrir")) {
+      var ahMatch = txt.match(/abrir\s*(?:horario)?\s*:?\s*(.+)/i);
+      if (!ahMatch) return "Formato: abrir horario: viernes 18:30 / Palermo / 4 cupos (marzo 2026)";
+      var ahRest = ahMatch[1];
+      var ahMes = ahRest.match(/\(([^)]+)\)/);
+      var ahParsed = ahMes ? parseMes(ahMes[1]) : { month: new Date().getMonth(), year: new Date().getFullYear(), key: new Date().getFullYear() + "-" + new Date().getMonth() };
+      if (!ahParsed) return "No entendí el mes.";
+      var ahClean = ahRest.replace(/\([^)]+\)/, "");
+      var ahParts = ahClean.split("/").map(function (s) { return s.trim() });
+      if (ahParts.length < 2) return "Formato: abrir horario: viernes 18:30 / Palermo / 4 cupos (marzo 2026)";
+      var ahTurno = ahParts[0].toLowerCase().match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      if (!ahTurno) return "No entendí el horario. Ej: viernes 18:30";
+      var ahSede = ahParts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
+      var ahCupos = 8;
+      if (ahParts[2]) { var cm2 = ahParts[2].match(/(\d+)/); if (cm2) ahCupos = parseInt(cm2[1]) }
+      var ahDia = ahTurno[1]; var ahHora = ahTurno[2];
+      // Check if already exists
+      var ahExisting = horariosExtra.find(function (h) { return h.sede === ahSede && h.dia === ahDia && h.hora === ahHora && h.mes_key === ahParsed.key });
+      if (ahExisting) {
+        await supa("horarios_extra", "PATCH", "?id=eq." + ahExisting.id, { abierto: true, cupos: ahCupos });
+      } else {
+        await supa("horarios_extra", "POST", "", { sede: ahSede, dia: ahDia, hora: ahHora, mes_key: ahParsed.key, cupos: ahCupos, abierto: true });
+      }
+      await refreshData();
+      return "✓ Horario abierto: " + ahDia + " " + ahHora + " — " + ahSede + " — " + ahCupos + " cupos — " + MN[ahParsed.month] + " " + ahParsed.year;
+    }
+
+    // CERRAR HORARIO
+    if (t.startsWith("cerrar horario") || t.startsWith("cerrar")) {
+      var chMatch = txt.match(/cerrar\s*(?:horario)?\s*:?\s*(.+)/i);
+      if (!chMatch) return "Formato: cerrar horario: viernes 18:30 / Palermo (marzo 2026)";
+      var chRest = chMatch[1];
+      var chMes = chRest.match(/\(([^)]+)\)/);
+      var chParsed = chMes ? parseMes(chMes[1]) : { month: new Date().getMonth(), year: new Date().getFullYear(), key: new Date().getFullYear() + "-" + new Date().getMonth() };
+      if (!chParsed) return "No entendí el mes.";
+      var chClean = chRest.replace(/\([^)]+\)/, "");
+      var chParts = chClean.split("/").map(function (s) { return s.trim() });
+      if (chParts.length < 2) return "Formato: cerrar horario: viernes 18:30 / Palermo (marzo 2026)";
+      var chTurno = chParts[0].toLowerCase().match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      if (!chTurno) return "No entendí el horario.";
+      var chSede = chParts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
+      var chDia = chTurno[1]; var chHora = chTurno[2];
+      var chExisting = horariosExtra.find(function (h) { return h.sede === chSede && h.dia === chDia && h.hora === chHora && h.mes_key === chParsed.key });
+      if (chExisting) {
+        await supa("horarios_extra", "PATCH", "?id=eq." + chExisting.id, { abierto: false });
+      } else {
+        await supa("horarios_extra", "POST", "", { sede: chSede, dia: chDia, hora: chHora, mes_key: chParsed.key, cupos: 0, abierto: false });
+      }
+      await refreshData();
+      return "✓ Horario cerrado: " + chDia + " " + chHora + " — " + chSede + " — " + MN[chParsed.month] + " " + chParsed.year;
+    }
+
+    // VER HORARIOS
+    if (t.includes("ver horario")) {
+      if (!horariosExtra.length) return "No hay horarios extra configurados. Los horarios base están siempre abiertos.\n\nUsá: abrir horario / cerrar horario";
+      var rh = "✦ Horarios configurados:\n\n";
+      horariosExtra.forEach(function (h) {
+        var p = h.mes_key.split("-").map(Number);
+        rh += (h.abierto ? "✅" : "❌") + " " + h.dia + " " + h.hora + " — " + h.sede + " — " + h.cupos + " cupos — " + MN[p[1]] + " " + p[0] + "\n";
+      });
+      rh += "\nHorarios base (siempre abiertos salvo que los cierres):\n";
+      ["San Isidro", "Palermo"].forEach(function (s) { rh += "📍 " + s + ": " + SCHED[s].map(function (h) { return h.replace("-", " ") }).join(", ") + "\n" });
+      return rh;
+    }
+
+    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios"
   }
 
   async function send() {
@@ -841,7 +908,7 @@ function MiniCalendar(props) {
 
 // ====== ALUMNO FLOW ======
 function AlumnoFlow(props) {
-  var al = props.al, allAls = props.allAls, refreshData = props.refreshData, cuotas = props.cuotas || [];
+  var al = props.al, allAls = props.allAls, refreshData = props.refreshData, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
   var pm = Object.keys(al.mp || {}); var paid = pm.length > 0;
   var now = new Date(); var curMk = now.getFullYear() + "-" + now.getMonth();
   var paidCurrent = !!(al.mp || {})[curMk];
@@ -882,22 +949,44 @@ function AlumnoFlow(props) {
     return cls.sort(function (a, b) { return a.date - b.date })
   }
 
-  function getRM() { return [curMk, nxtMk].filter(function (k) { return (al.mp || {})[k] }) }
+  function getRM() { var months = [curMk]; if ((al.mp || {})[nxtMk]) months.push(nxtMk); return months }
 
   function getAllAvailableSlots() {
     var sched = SCHED[al.sede]; if (!sched) return [];
     var vm = getRM(); if (!vm.length) return [];
     var alts = [];
+    // Get closed horarios for this sede
+    var closedSet = {};
+    horariosExtra.forEach(function (h) { if (!h.abierto && h.sede === al.sede) { closedSet[h.dia + "-" + h.hora + "-" + h.mes_key] = true } });
+    // Regular schedule slots
     sched.forEach(function (key) {
       var parts = key.split("-");
       vm.forEach(function (mk) {
         var p = mk.split("-").map(Number);
+        // Check if this slot is closed
+        if (closedSet[parts[0] + "-" + parts[1] + "-" + mk]) return;
         classesInMonth(parts[0], parts[1], p[1], p[0]).forEach(function (d) {
           if (hrsUntil(d) > 24) {
             var cupo = getCupoForSlot(allAls, al.sede, parts[0], parts[1], d);
             if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: parts[0], hora: parts[1] })
           }
         })
+      })
+    });
+    // Extra horarios opened by admin
+    horariosExtra.forEach(function (h) {
+      if (!h.abierto || h.sede !== al.sede) return;
+      // Skip if it's already in SCHED (it's a regular slot, already handled above)
+      var schedKey = h.dia + "-" + h.hora;
+      if (sched.indexOf(schedKey) !== -1) return;
+      var mk = h.mes_key;
+      if (vm.indexOf(mk) === -1) return;
+      var p = mk.split("-").map(Number);
+      classesInMonth(h.dia, h.hora, p[1], p[0]).forEach(function (d) {
+        if (hrsUntil(d) > 24) {
+          var cupo = getCupoForSlot(allAls, al.sede, h.dia, h.hora, d, h.cupos);
+          if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: h.dia, hora: h.hora })
+        }
       })
     });
     var seen = {}; return alts.filter(function (a) { var k = a.date.toISOString(); if (seen[k]) return false; seen[k] = true; return true }).sort(function (a, b) { return a.date - b.date });
@@ -1119,6 +1208,7 @@ export default function App() {
   var _profes = useState([]), profes = _profes[0], setProfes = _profes[1];
   var _listas = useState([]), listas = _listas[0], setListas = _listas[1];
   var _cuotas = useState([]), cuotas = _cuotas[0], setCuotas = _cuotas[1];
+  var _horariosExtra = useState([]), horariosExtra = _horariosExtra[0], setHorariosExtra = _horariosExtra[1];
   var _loading = useState(true), loading = _loading[0], setLoading = _loading[1];
   var _adminAuth = useState(false), adminAuth = _adminAuth[0], setAdminAuth = _adminAuth[1];
   var _adminView = useState("chat"), adminView = _adminView[0], setAdminView = _adminView[1];
@@ -1128,14 +1218,15 @@ export default function App() {
 
   var loadData = useCallback(async function () {
     try {
-      var [alRows, profeRows, pagos, cancs, extras, listasRows, cuotasRows] = await Promise.all([
+      var [alRows, profeRows, pagos, cancs, extras, listasRows, cuotasRows, horariosExtraRows] = await Promise.all([
         supa("alumnos", "GET", "?estado=eq.activo&order=nombre"),
         supa("profesoras", "GET", "?order=nombre"),
         supa("meses_pagados", "GET"),
         supa("cancelaciones", "GET"),
         supa("clases_extra", "GET"),
         supa("listas", "GET"),
-        supa("cuotas", "GET")
+        supa("cuotas", "GET"),
+        supa("horarios_extra", "GET")
       ]);
       // Auto-assign passwords to any student/prof missing one
       if (alRows) {
@@ -1165,6 +1256,7 @@ export default function App() {
       setProfes(builtProfes);
       setListas(listasRows || []);
       setCuotas(cuotasRows || []);
+      setHorariosExtra(horariosExtraRows || []);
     } catch (e) { console.error("Load error:", e) }
     setLoading(false);
   }, []);
@@ -1211,7 +1303,7 @@ export default function App() {
       {route === "admin" ? (
         !adminAuth ? <AdminLogin onLogin={function () { setAdminAuth(true) }} /> :
           adminView === "chat" ? (
-            <div style={{ flex: 1, overflow: "hidden" }}><AdminChat als={als} refreshData={refreshData} profes={profes} listas={listas} cuotas={cuotas} /></div>
+            <div style={{ flex: 1, overflow: "hidden" }}><AdminChat als={als} refreshData={refreshData} profes={profes} listas={listas} cuotas={cuotas} horariosExtra={horariosExtra} /></div>
           ) : adminView === "alumna" ? (
             !logged ? (
               <GenericLogin table="alumnos" allData={als} onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); setLogged(a || row); setTab("cal") }} subtitle="Seleccioná alumna para ver su vista" skipPw={true} refreshData={refreshData} />
@@ -1227,7 +1319,7 @@ export default function App() {
                 </div>
                 <div style={{ flex: 1, overflow: "auto", background: white }}>
                   {tab === "cal" && cur ? <AlumnoCal al={cur} cuotas={cuotas} /> : null}
-                  {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} /> : null}
+                  {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} horariosExtra={horariosExtra} /> : null}
                 </div>
               </div>
             )
@@ -1259,7 +1351,7 @@ export default function App() {
             </div>
             <div style={{ flex: 1, overflow: "auto", background: white }}>
               {tab === "cal" && cur ? <AlumnoCal al={cur} cuotas={cuotas} /> : null}
-              {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} /> : null}
+              {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} horariosExtra={horariosExtra} /> : null}
             </div>
           </div>
         )
