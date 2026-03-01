@@ -49,13 +49,17 @@ function getCuotaInfo(cuotas, sede, frecuencia) {
   var periodoLabel = day <= 7 ? "hasta el 7" : day <= 14 ? "del 8 al 14" : "desde el 15";
   if (frecuencia === "2x") {
     var row = results[0];
-    return { efectivo: row[periodo], transferencia: row[periodo], periodo: periodoLabel, is2x: true, allRows: results,
+    var nextFecha2x = day <= 7 ? 8 : day <= 14 ? 15 : null;
+    var diasRestantes2x = nextFecha2x ? nextFecha2x - day : null;
+    return { efectivo: row[periodo], transferencia: row[periodo], periodo: periodoLabel, is2x: true, allRows: results, diasRestantes: diasRestantes2x,
       nextAumento: day <= 7 ? { fecha: 8, efectivo: row.dia_8_al_14, transferencia: row.dia_8_al_14 } : day <= 14 ? { fecha: 15, efectivo: row.desde_dia_15, transferencia: row.desde_dia_15 } : null }
   }
   var efRow = results.find(function (r) { return r.forma_pago === "efectivo" });
   var trRow = results.find(function (r) { return r.forma_pago === "transferencia" });
   if (!efRow || !trRow) return null;
-  return { efectivo: efRow[periodo], transferencia: trRow[periodo], periodo: periodoLabel, is2x: false, allRows: results,
+  var nextFecha = day <= 7 ? 8 : day <= 14 ? 15 : null;
+  var diasRestantes = nextFecha ? nextFecha - day : null;
+  return { efectivo: efRow[periodo], transferencia: trRow[periodo], periodo: periodoLabel, is2x: false, allRows: results, diasRestantes: diasRestantes,
     nextAumento: day <= 7 ? { fecha: 8, efectivo: efRow.dia_8_al_14, transferencia: trRow.dia_8_al_14 } : day <= 14 ? { fecha: 15, efectivo: efRow.desde_dia_15, transferencia: trRow.desde_dia_15 } : null }
 }
 
@@ -970,12 +974,27 @@ function AlumnoCal(props) {
       <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{al.turno.dia + " " + al.turno.hora + " · " + al.sede}</p>
       {!paidCurrent ? (
         <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5", marginBottom: 14 }}>
-          <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 14, fontFamily: ft }}>{"⚠ Por favor realizá el pago de " + MN[curMonth] + " para habilitar todas las funciones"}</p>
+          <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 15, fontFamily: ft }}>{"💰 Cuota de " + MN[curMonth] + " pendiente"}</p>
           {cuotaInfo ? (
-            <div style={{ marginTop: 10, fontSize: 13, fontFamily: ft, color: "#991b1b", lineHeight: 1.7 }}>
-              <p style={{ margin: "4px 0" }}>{"💵 Efectivo: " + fmtMoney(cuotaInfo.efectivo)}</p>
-              <p style={{ margin: "4px 0" }}>{"🏦 Transferencia: " + fmtMoney(cuotaInfo.transferencia)}</p>
-              {cuotaInfo.nextAumento ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#b91c1c", fontStyle: "italic" }}>{"(A partir del " + cuotaInfo.nextAumento.fecha + ": efectivo " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transferencia " + fmtMoney(cuotaInfo.nextAumento.transferencia) + ")"}</p> : null}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "12px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div style={{ textAlign: "center", flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Efectivo</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.efectivo)}</p>
+                  </div>
+                  <div style={{ textAlign: "center", flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Transferencia</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.transferencia)}</p>
+                  </div>
+                </div>
+                {cuotaInfo.diasRestantes ? (
+                  <div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"⏰ Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "") + " para pagar este precio"}</p>
+                    {cuotaInfo.nextAumento ? <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e", fontFamily: ft }}>{"Después pasa a: ef. " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transf. " + fmtMoney(cuotaInfo.nextAumento.transferencia)}</p> : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
@@ -1172,16 +1191,33 @@ function AlumnoFlow(props) {
     return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", height: "100%" }}>
       <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5" }}>
-        <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 14, fontFamily: ft }}>{"⚠ No obtuvimos tu pago de " + MN[now.getMonth()] + " todavía."}</p>
-        <p style={{ margin: "6px 0 0", color: "#991b1b", fontSize: 13, fontFamily: ft, lineHeight: 1.5 }}>Podés cancelar clases, pero no reagendar ni recuperar hasta regularizar el pago.</p>
+        <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 15, fontFamily: ft }}>{"💰 Cuota de " + MN[now.getMonth()] + " pendiente"}</p>
         {cuotaInfo ? (
-          <div style={{ marginTop: 10, background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "10px 12px" }}>
-            <p style={{ margin: 0, fontSize: 13, fontFamily: ft, color: "#991b1b", fontWeight: 600 }}>Cuota {al.frecuencia === "2x" ? "(2x/semana)" : "(1x/semana)"}:</p>
-            <p style={{ margin: "4px 0", fontSize: 13, fontFamily: ft, color: "#991b1b" }}>{"💵 Efectivo: " + fmtMoney(cuotaInfo.efectivo)}</p>
-            <p style={{ margin: "4px 0", fontSize: 13, fontFamily: ft, color: "#991b1b" }}>{"🏦 Transferencia: " + fmtMoney(cuotaInfo.transferencia)}</p>
-            {cuotaInfo.nextAumento ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#b91c1c", fontStyle: "italic" }}>{"(A partir del " + cuotaInfo.nextAumento.fecha + ": efectivo " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transferencia " + fmtMoney(cuotaInfo.nextAumento.transferencia) + ")"}</p> : null}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "12px 14px" }}>
+              <p style={{ margin: 0, fontSize: 14, fontFamily: ft, color: "#991b1b", fontWeight: 600 }}>{"Tu cuota actual:"}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                <div style={{ textAlign: "center", flex: 1 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Efectivo</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.efectivo)}</p>
+                </div>
+                <div style={{ textAlign: "center", flex: 1 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Transferencia</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.transferencia)}</p>
+                </div>
+              </div>
+              {cuotaInfo.diasRestantes ? (
+                <div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"⏰ Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "") + " para pagar este precio"}</p>
+                  {cuotaInfo.nextAumento ? <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e", fontFamily: ft }}>{"A partir del " + cuotaInfo.nextAumento.fecha + ": efectivo " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transf. " + fmtMoney(cuotaInfo.nextAumento.transferencia)}</p> : null}
+                </div>
+              ) : null}
+            </div>
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: "#991b1b", fontFamily: ft, lineHeight: 1.5 }}>Podés cancelar clases, pero no reagendar ni recuperar hasta confirmar el pago.</p>
           </div>
-        ) : null}
+        ) : (
+          <p style={{ margin: "6px 0 0", color: "#991b1b", fontSize: 13, fontFamily: ft, lineHeight: 1.5 }}>Podés cancelar clases, pero no reagendar ni recuperar hasta regularizar el pago.</p>
+        )}
       </div>
       {step === "menu" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
