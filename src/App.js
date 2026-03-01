@@ -460,7 +460,7 @@ function GenericLogin(props) {
       }
     }
     setBusy(false);
-    if (!found) { setErr("No encontramos ese nombre. Verificá que esté escrito igual que cuando te dieron de alta."); return }
+    if (!found) { setErr("No encontramos ese nombre. (Buscado: '" + searchName + "', datos: " + (allData ? allData.length : "null") + " items)"); return }
     if (skipPw) { onLogin(found); return }
     if (!found.password && !found.pw) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
     var foundPw = found.password || found.pw;
