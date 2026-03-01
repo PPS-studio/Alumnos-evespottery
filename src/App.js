@@ -462,8 +462,9 @@ function GenericLogin(props) {
     setBusy(false);
     if (!found) { setErr("No encontramos ese nombre. Verificá que esté escrito igual que cuando te dieron de alta."); return }
     if (skipPw) { onLogin(found); return }
-    if (!found.password) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
-    if (found.password !== pw) { setErr("Contraseña incorrecta."); return }
+    if (!found.password && !found.pw) { setErr("Tu cuenta aún no tiene contraseña asignada. Contactá al equipo de Eves Pottery para que te la den."); return }
+    var foundPw = found.password || found.pw;
+    if (foundPw !== pw) { setErr("Contraseña incorrecta."); return }
     onLogin(found);
   }
 
