@@ -393,10 +393,30 @@ function AdminChat(props) {
       return "✓ Regalo para " + al7.nombre
     }
 
+    // ACTUALIZAR CUOTA
+    if (t.startsWith("cuota") && t.includes(":")) {
+      var cMatch = txt.match(/cuota\s*:?\s*(.+)/i);
+      if (!cMatch) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
+      var cParts = cMatch[1].split("/").map(function (s) { return s.trim() });
+      if (cParts.length < 6) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
+      var cSede = cParts[0].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
+      var cFreq = cParts[1]; var cForma = cParts[2].toLowerCase();
+      var cV1 = parseInt(cParts[3]), cV2 = parseInt(cParts[4]), cV3 = parseInt(cParts[5]);
+      if (isNaN(cV1) || isNaN(cV2) || isNaN(cV3)) return "Los valores deben ser números.";
+      var existing = cuotas.find(function (c) { return c.sede === cSede && c.frecuencia === cFreq && c.forma_pago === cForma });
+      if (existing) {
+        await supa("cuotas", "PATCH", "?id=eq." + existing.id, { hasta_dia_7: cV1, dia_8_al_14: cV2, desde_dia_15: cV3 });
+      } else {
+        await supa("cuotas", "POST", "", { sede: cSede, frecuencia: cFreq, forma_pago: cForma, hasta_dia_7: cV1, dia_8_al_14: cV2, desde_dia_15: cV3 });
+      }
+      await refreshData();
+      return "✓ Cuota actualizada: " + cSede + " / " + cFreq + " / " + cForma + "\n  " + fmtMoney(cV1) + " / " + fmtMoney(cV2) + " / " + fmtMoney(cV3);
+    }
+
     // ALTA ALUMNO
     var hasSlashes = txt.includes("/");
     var looksLikeAlta = t.includes("alta") || (hasSlashes && (t.includes("palermo") || t.includes("san isidro") || t.includes("isidro")));
-    if (looksLikeAlta && !t.startsWith("alta profe")) {
+    if (looksLikeAlta && !t.startsWith("alta profe") && !t.startsWith("cuota") && !t.startsWith("abrir") && !t.startsWith("cerrar") && !t.startsWith("cancelar clase") && !t.startsWith("agendar") && !t.startsWith("frecuencia") && !t.startsWith("freq")) {
       var parts2 = txt.split("/").map(function (s) { return s.trim() });
       if (parts2.length < 3) return "Formato: Nombre / Sede / día hora";
       var nom3, tel2 = "", email2 = "", sedePart, turnoPart;
@@ -464,26 +484,7 @@ function AdminChat(props) {
       return "✓ " + fAl.nombre + " → frecuencia: " + fVal + "/semana";
     }
 
-    // ACTUALIZAR CUOTA
-    if (t.startsWith("cuota") && t.includes(":")) {
-      // cuota: San Isidro / 1x / efectivo / 95000 / 101000 / 108000
-      var cMatch = txt.match(/cuota\s*:?\s*(.+)/i);
-      if (!cMatch) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
-      var cParts = cMatch[1].split("/").map(function (s) { return s.trim() });
-      if (cParts.length < 6) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
-      var cSede = cParts[0].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
-      var cFreq = cParts[1]; var cForma = cParts[2].toLowerCase();
-      var cV1 = parseInt(cParts[3]), cV2 = parseInt(cParts[4]), cV3 = parseInt(cParts[5]);
-      if (isNaN(cV1) || isNaN(cV2) || isNaN(cV3)) return "Los valores deben ser números.";
-      var existing = cuotas.find(function (c) { return c.sede === cSede && c.frecuencia === cFreq && c.forma_pago === cForma });
-      if (existing) {
-        await supa("cuotas", "PATCH", "?id=eq." + existing.id, { hasta_dia_7: cV1, dia_8_al_14: cV2, desde_dia_15: cV3 });
-      } else {
-        await supa("cuotas", "POST", "", { sede: cSede, frecuencia: cFreq, forma_pago: cForma, hasta_dia_7: cV1, dia_8_al_14: cV2, desde_dia_15: cV3 });
-      }
-      await refreshData();
-      return "✓ Cuota actualizada: " + cSede + " / " + cFreq + " / " + cForma + "\n  " + fmtMoney(cV1) + " / " + fmtMoney(cV2) + " / " + fmtMoney(cV3);
-    }
+    // (cuota handler moved above alta alumno)
 
     // ABRIR HORARIO
     if (t.startsWith("abrir horario") || t.startsWith("abrir")) {
@@ -928,19 +929,227 @@ function EncargadaVista(props) {
   var profe = props.profe, als = props.als;
   var sede = profe.sedeEncargada;
   var now = new Date(); var year = now.getFullYear(); var month = now.getMonth();
+  var _subTab = useState("cal"), subTab = _subTab[0], setSubTab = _subTab[1];
+  var _selDate = useState(null), selDate = _selDate[0], setSelDate = _selDate[1];
+  var _selSlot = useState(null), selSlot = _selSlot[0], setSelSlot = _selSlot[1];
+  var _calMonth = useState({ m: month, y: year }), calM = _calMonth[0], setCalM = _calMonth[1];
+
   var sched = SCHED[sede] || [];
-  var clases = [];
+  var sedeAls = als.filter(function (a) { return a.sede === sede });
+
+  // Build all classes for calMonth
+  var allClasses = [];
   sched.forEach(function (h) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
-    var dates = classesInMonth(dia, hora, month, year);
-    dates.forEach(function (dt) { var expected = getCupoForSlot(als, sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.ocupado, past: dt < now }) })
+    var dates = classesInMonth(dia, hora, calM.m, calM.y);
+    dates.forEach(function (dt) {
+      var cupo = getCupoForSlot(als, sede, dia, hora, dt);
+      allClasses.push({ date: dt, dia: dia, hora: hora, ocupado: cupo.ocupado, libre: cupo.libre, past: dt < now })
+    })
   });
-  clases.sort(function (a, b) { return a.date - b.date });
+
+  // Group by date for calendar dots
+  var classesOnDate = {};
+  allClasses.forEach(function (c) {
+    var k = c.date.getDate();
+    if (!classesOnDate[k]) classesOnDate[k] = [];
+    classesOnDate[k].push(c);
+  });
+
+  // Classes on selected date
+  var selClasses = selDate ? (classesOnDate[selDate.getDate()] || []).sort(function (a, b) { return a.date - b.date }) : [];
+
+  // Get alumnos for a specific slot
+  function getSlotAlumnos(dia, hora, fecha) {
+    var dateStr = fecha.toISOString();
+    var result = [];
+    als.forEach(function (a) {
+      if (a.sede !== sede) return;
+      if (a.turno.dia === dia && a.turno.hora === hora) {
+        var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr });
+        if (!cancelled) result.push({ alumno: a, tipo: "fijo" });
+        else result.push({ alumno: a, tipo: "canceló" });
+      }
+      (a.ex || []).forEach(function (e) {
+        if (e.date === dateStr && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: e.tipo || "recuperacion" })
+      });
+    });
+    return result;
+  }
+
+  // Calendar
+  var first = new Date(calM.y, calM.m, 1);
+  var startDay = first.getDay() === 0 ? 6 : first.getDay() - 1;
+  var daysInMonth = new Date(calM.y, calM.m + 1, 0).getDate();
+  var cells = [];
+  for (var ci = 0; ci < startDay; ci++) cells.push(null);
+  for (var di = 1; di <= daysInMonth; di++) cells.push(di);
+  var dayLabels = ["L", "M", "X", "J", "V", "S", "D"];
+
+  // Pagos pendientes
+  var curMk = now.getFullYear() + "-" + now.getMonth();
+  var pendPago = sedeAls.filter(function (a) { return !(a.mp || {})[curMk] });
+  var alDia = sedeAls.filter(function (a) { return !!(a.mp || {})[curMk] });
+
+  var subBtnStyle = function (active) { return { flex: 1, padding: "8px 6px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: ft, background: active ? white : cream, color: active ? navy : grayWarm, borderBottom: active ? "2px solid " + copper : "2px solid transparent", borderTop: "none", borderLeft: "none", borderRight: "none" } };
+
   return (
-    <div style={{ padding: 20 }}>
-      <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Vista sede: {sede}</h3>
-      <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{MN[month] + " " + year + " — Todas las clases"}</p>
-      {clases.map(function (c, i) { return (<div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 6, borderRadius: 10, border: "1px solid " + grayBlue, background: c.past ? "#f5f5f0" : white, opacity: c.past ? 0.5 : 1 }}><span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{fmtDateShort(c.date)}</span><span style={{ fontFamily: ft, fontSize: 13, color: copper, fontWeight: 600 }}>{c.alumnos + " alumno" + (c.alumnos !== 1 ? "s" : "")}</span></div>) })}</div>);
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
+        <button onClick={function () { setSubTab("cal"); setSelSlot(null) }} style={subBtnStyle(subTab === "cal")}>{"📅 Calendario"}</button>
+        <button onClick={function () { setSubTab("alumnos") }} style={subBtnStyle(subTab === "alumnos")}>{"👥 Alumnos"}</button>
+        <button onClick={function () { setSubTab("pagos") }} style={subBtnStyle(subTab === "pagos")}>{"💰 Pagos"}</button>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+
+        {subTab === "cal" ? (
+          <div>
+            <h3 style={{ margin: "0 0 12px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"📍 " + sede}</h3>
+            {/* Mini calendar */}
+            <div style={{ background: white, borderRadius: 12, border: "1px solid " + grayBlue, padding: 14, marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <button onClick={function () { setCalM(function (p) { return p.m === 0 ? { m: 11, y: p.y - 1 } : { m: p.m - 1, y: p.y } }) }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: navy, padding: "4px 8px" }}>{"‹"}</button>
+                <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{MN[calM.m] + " " + calM.y}</span>
+                <button onClick={function () { setCalM(function (p) { return p.m === 11 ? { m: 0, y: p.y + 1 } : { m: p.m + 1, y: p.y } }) }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: navy, padding: "4px 8px" }}>{"›"}</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, textAlign: "center" }}>
+                {dayLabels.map(function (l) { return <div key={l} style={{ fontSize: 11, color: grayWarm, fontFamily: ft, fontWeight: 600, padding: 4 }}>{l}</div> })}
+                {cells.map(function (d, i) {
+                  var hasCls = d && classesOnDate[d];
+                  var isSel = selDate && d === selDate.getDate() && calM.m === selDate.getMonth() && calM.y === selDate.getFullYear();
+                  var isToday = d && now.getDate() === d && now.getMonth() === calM.m && now.getFullYear() === calM.y;
+                  return (<div key={i} onClick={function () { if (d) { setSelDate(new Date(calM.y, calM.m, d)); setSelSlot(null) } }}
+                    style={{ padding: "8px 2px", borderRadius: 8, cursor: d ? "pointer" : "default", background: isSel ? copper : hasCls ? "#f0f5e8" : "transparent", color: isSel ? white : hasCls ? "#5a6a2a" : d ? navy : "transparent", fontWeight: isSel || isToday ? 700 : 400, fontSize: 13, fontFamily: ft, border: isToday && !isSel ? "1px solid " + copper : "1px solid transparent", position: "relative" }}>
+                    {d || ""}
+                    {hasCls && !isSel ? <div style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: "#5a6a2a" }} /> : null}
+                  </div>)
+                })}
+              </div>
+            </div>
+
+            {/* Selected date classes */}
+            {selDate && !selSlot ? (
+              <div>
+                <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>
+                  {selDate.getDate() + " de " + MN[selDate.getMonth()] + " — " + (selClasses.length ? selClasses.length + " clase" + (selClasses.length > 1 ? "s" : "") : "Sin clases")}
+                </p>
+                {selClasses.map(function (c, i) {
+                  return (<button key={i} onClick={function () { setSelSlot(c) }} style={{ display: "block", width: "100%", textAlign: "left", padding: "12px 14px", marginBottom: 6, borderRadius: 10, border: "1px solid " + grayBlue, background: c.past ? "#f5f5f0" : white, opacity: c.past ? 0.6 : 1, cursor: "pointer", fontFamily: ft }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, color: navy, fontSize: 14 }}>{c.hora + " — " + c.dia}</span>
+                      <span style={{ fontSize: 12, color: copper, fontWeight: 600 }}>{c.ocupado + " alumno" + (c.ocupado !== 1 ? "s" : "") + " · " + c.libre + " libre" + (c.libre !== 1 ? "s" : "")}</span>
+                    </div>
+                  </button>)
+                })}
+              </div>
+            ) : null}
+
+            {/* Selected slot - show alumnos */}
+            {selSlot ? (function () {
+              var slotAls = getSlotAlumnos(selSlot.dia, selSlot.hora, selSlot.date);
+              var fijos = slotAls.filter(function (s) { return s.tipo === "fijo" });
+              var recups = slotAls.filter(function (s) { return s.tipo === "recuperacion" || s.tipo === "regalo" || s.tipo === "extra" });
+              var cancels = slotAls.filter(function (s) { return s.tipo === "canceló" });
+              return (
+                <div>
+                  <button onClick={function () { setSelSlot(null) }} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: ft, fontSize: 13, color: copper, padding: 0, marginBottom: 10, fontWeight: 600 }}>{"← Volver a clases del día"}</button>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{selSlot.dia + " " + selSlot.hora}</p>
+                  <p style={{ margin: "0 0 12px", color: grayWarm, fontSize: 12, fontFamily: ft }}>{selSlot.date.getDate() + " de " + MN[selSlot.date.getMonth()] + " — " + selSlot.ocupado + " alumno" + (selSlot.ocupado !== 1 ? "s" : "")}</p>
+                  {fijos.length > 0 ? (
+                    <div style={{ marginBottom: 10 }}>
+                      <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: grayWarm, fontFamily: ft }}>Fijos:</p>
+                      {fijos.map(function (s) { return (<div key={s.alumno.id} style={{ padding: "8px 12px", marginBottom: 4, borderRadius: 8, background: "#f0f5e8", border: "1px solid #b5c48a" }}><span style={{ fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{s.alumno.nombre}</span></div>) })}
+                    </div>
+                  ) : null}
+                  {recups.length > 0 ? (
+                    <div style={{ marginBottom: 10 }}>
+                      <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: grayWarm, fontFamily: ft }}>Recuperaciones / Extra:</p>
+                      {recups.map(function (s) { return (<div key={s.alumno.id} style={{ padding: "8px 12px", marginBottom: 4, borderRadius: 8, background: "#fdf6ec", border: "1px solid #e8d4b0" }}><span style={{ fontFamily: ft, fontSize: 13, color: copper, fontWeight: 500 }}>{s.alumno.nombre}</span><span style={{ fontSize: 11, color: grayWarm, marginLeft: 6 }}>{"(" + s.tipo + ")"}</span></div>) })}
+                    </div>
+                  ) : null}
+                  {cancels.length > 0 ? (
+                    <div style={{ marginBottom: 10 }}>
+                      <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: grayWarm, fontFamily: ft }}>Cancelaron:</p>
+                      {cancels.map(function (s) { return (<div key={s.alumno.id} style={{ padding: "8px 12px", marginBottom: 4, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5" }}><span style={{ fontFamily: ft, fontSize: 13, color: "#991b1b", fontWeight: 500, textDecoration: "line-through" }}>{s.alumno.nombre}</span></div>) })}
+                    </div>
+                  ) : null}
+                  {fijos.length === 0 && recups.length === 0 ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 13 }}>No hay alumnos en este horario.</p> : null}
+                </div>)
+            })() : null}
+
+            {!selDate ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 13, textAlign: "center", marginTop: 8 }}>Tocá un día para ver las clases</p> : null}
+          </div>
+        ) : null}
+
+        {subTab === "alumnos" ? (
+          <div>
+            <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"👥 Alumnos — " + sede}</h3>
+            <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sedeAls.length + " alumno" + (sedeAls.length !== 1 ? "s" : "") + " activo" + (sedeAls.length !== 1 ? "s" : "")}</p>
+            {SCHED[sede].map(function (slot) {
+              var parts = slot.split("-"); var dia = parts[0], hora = parts[1];
+              var slotAls = sedeAls.filter(function (a) { return a.turno.dia === dia && a.turno.hora === hora });
+              if (!slotAls.length) return null;
+              return (
+                <div key={slot} style={{ marginBottom: 14 }}>
+                  <div style={{ padding: "8px 12px", background: "#f8f6f2", borderRadius: "8px 8px 0 0", border: "1px solid " + grayBlue, borderBottom: "none" }}>
+                    <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>{dia + " " + hora}</span>
+                    <span style={{ fontSize: 12, color: grayWarm, fontFamily: ft, marginLeft: 8 }}>{"(" + slotAls.length + ")"}</span>
+                  </div>
+                  <div style={{ border: "1px solid " + grayBlue, borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
+                    {slotAls.map(function (a) {
+                      var paid = !!(a.mp || {})[curMk];
+                      return (<div key={a.id} style={{ padding: "8px 12px", borderBottom: "1px solid " + grayBlue, display: "flex", justifyContent: "space-between", alignItems: "center", background: white }}>
+                        <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}</span>
+                        <span style={{ fontSize: 11, fontFamily: ft, color: paid ? "#5a6a2a" : "#991b1b", fontWeight: 600 }}>{paid ? "✓ pagó" : "✗ debe"}</span>
+                      </div>)
+                    })}
+                  </div>
+                </div>)
+            })}
+          </div>
+        ) : null}
+
+        {subTab === "pagos" ? (
+          <div>
+            <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"💰 Pagos " + MN[month] + " — " + sede}</h3>
+            <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{alDia.length + " al día · " + pendPago.length + " pendiente" + (pendPago.length !== 1 ? "s" : "")}</p>
+
+            {pendPago.length > 0 ? (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ padding: "10px 14px", background: "#fef2f2", borderRadius: "10px 10px 0 0", border: "1px solid #fca5a5" }}>
+                  <span style={{ fontWeight: 700, color: "#991b1b", fontFamily: ft, fontSize: 14 }}>{"⚠ Pendientes (" + pendPago.length + ")"}</span>
+                </div>
+                <div style={{ border: "1px solid #fca5a5", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                  {pendPago.map(function (a) {
+                    return (<div key={a.id} style={{ padding: "10px 14px", borderBottom: "1px solid #fca5a5", background: white, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div><p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{a.nombre}</p><p style={{ margin: 0, fontFamily: ft, fontSize: 11, color: grayWarm }}>{a.turno.dia + " " + a.turno.hora}</p></div>
+                      <span style={{ fontSize: 11, color: "#991b1b", fontFamily: ft, fontWeight: 600 }}>{"No pagó"}</span>
+                    </div>)
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {alDia.length > 0 ? (
+              <div>
+                <div style={{ padding: "10px 14px", background: "#f0f5e8", borderRadius: "10px 10px 0 0", border: "1px solid #b5c48a" }}>
+                  <span style={{ fontWeight: 700, color: "#5a6a2a", fontFamily: ft, fontSize: 14 }}>{"✓ Al día (" + alDia.length + ")"}</span>
+                </div>
+                <div style={{ border: "1px solid #b5c48a", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                  {alDia.map(function (a) {
+                    return (<div key={a.id} style={{ padding: "10px 14px", borderBottom: "1px solid #b5c48a", background: white, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div><p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{a.nombre}</p><p style={{ margin: 0, fontFamily: ft, fontSize: 11, color: grayWarm }}>{a.turno.dia + " " + a.turno.hora}</p></div>
+                      <span style={{ fontSize: 11, color: "#5a6a2a", fontFamily: ft, fontWeight: 600 }}>{"Pagó ✓"}</span>
+                    </div>)
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+      </div>
+    </div>);
 }
 
 // ====== ALUMNO CALENDAR ======
