@@ -1322,8 +1322,8 @@ function AlumnoCal(props) {
                 : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span>
                 : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}
             </div>
-            {canc ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{c.sinRecup ? (fer ? "Feriado — mes de 5 clases, no se recupera" : "Clase cancelada — no se recupera") : "Clase cancelada — podrás recuperarla cuando gustes"}</div> : null}
-            {!canc && fer && !past ? <div style={{ fontSize: 12, color: "#92651e", marginTop: 5, fontFamily: ft }}>{"⚠ Feriado — esta clase será cancelada"}</div> : null}
+            {canc ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{c.sinRecup ? (fer ? "FERIADO — el taller permanece cerrado (mes de 5 clases, no se recupera)" : "Clase cancelada — no se recupera") : (fer ? "FERIADO — el taller permanece cerrado. Podrás recuperarla cuando gustes." : "Clase cancelada — podrás recuperarla cuando gustes")}</div> : null}
+            {!canc && fer && !past ? <div style={{ fontSize: 12, color: "#92651e", marginTop: 5, fontFamily: ft }}>{"FERIADO — el taller permanece cerrado" + (c.tot <= 4 ? ". Podrás recuperar esta clase." : "")}</div> : null}
             {!past && !fer && !canc && h < 24 ? <div style={{ fontSize: 11, color: copper, marginTop: 5, fontFamily: ft }}>{"⚠ Menos de 24h"}</div> : null}
           </div>) })}</div></div>);
 }
