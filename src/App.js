@@ -24,11 +24,30 @@ var ft = "'Barlow Semi Condensed',sans-serif";
 var ADMIN_PW = "Clases2026";
 var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "martes-14:00", "martes-18:30", "miércoles-18:30", "jueves-18:30", "viernes-18:00", "sábado-10:00"],
-  "Palermo": ["lunes-10:00", "lunes-18:30", "martes-14:30", "martes-18:30", "miércoles-18:30", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30"]
+  "Palermo": ["lunes-10:00", "lunes-18:30", "martes-14:30", "martes-18:30", "miércoles-18:30", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
 };
 var MAX_CUPO = 8; var CLASES_BASE = 4;
 var DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 var MN = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+var FERIADOS_2026 = [
+  "2026-3-23", "2026-3-24",
+  "2026-4-2", "2026-4-3",
+  "2026-5-1", "2026-5-25",
+  "2026-6-15", "2026-6-20",
+  "2026-7-9", "2026-7-10",
+  "2026-8-17",
+  "2026-10-12",
+  "2026-11-23",
+  "2026-12-7", "2026-12-8", "2026-12-25"
+];
+function isFeriado(date) {
+  var k = date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
+  return FERIADOS_2026.indexOf(k) !== -1;
+}
+function feriadosInMonth(day, time, month, year) {
+  var all = classesInMonth(day, time, month, year);
+  return all.filter(function (d) { return isFeriado(d) });
+}
 
 function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/\d{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
 function classesInMonth(day, time, month, year) {
@@ -166,7 +185,7 @@ function AdminLogin(props) {
 function AdminChat(props) {
   var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Agendar clase: Nombre / día hora fecha\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Cancelar clases: fecha (feriado/suspensión para todos)\n• Agendar clase: Nombre / día hora fecha\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -416,7 +435,7 @@ function AdminChat(props) {
     // ALTA ALUMNO
     var hasSlashes = txt.includes("/");
     var looksLikeAlta = t.includes("alta") || (hasSlashes && (t.includes("palermo") || t.includes("san isidro") || t.includes("isidro")));
-    if (looksLikeAlta && !t.startsWith("alta profe") && !t.startsWith("cuota") && !t.startsWith("abrir") && !t.startsWith("cerrar") && !t.startsWith("cancelar clase") && !t.startsWith("agendar") && !t.startsWith("frecuencia") && !t.startsWith("freq")) {
+    if (looksLikeAlta && !t.startsWith("alta profe") && !t.startsWith("cuota") && !t.startsWith("abrir") && !t.startsWith("cerrar") && !t.startsWith("cancelar clase") && !t.startsWith("cancelar clases") && !t.startsWith("agendar") && !t.startsWith("frecuencia") && !t.startsWith("freq")) {
       var parts2 = txt.split("/").map(function (s) { return s.trim() });
       if (parts2.length < 3) return "Formato: Nombre / Sede / día hora";
       var nom3, tel2 = "", email2 = "", sedePart, turnoPart;
@@ -552,7 +571,66 @@ function AdminChat(props) {
       return rh;
     }
 
-    // CANCELAR CLASE (admin cancela por alumno)
+    // CANCELAR CLASES (admin cancela un día entero para todos — feriado o suspensión)
+    if (t.startsWith("cancelar clases")) {
+      var cdMatch = txt.match(/cancelar\s*clases\s*:?\s*(.+)/i);
+      if (!cdMatch) return "Formato: cancelar clases: 24 marzo (cancela ese día para todos los alumnos que tienen clase)";
+      var cdRest = cdMatch[1].trim().toLowerCase();
+      var cdDate = null;
+      var cdSlash = cdRest.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}))?/);
+      if (cdSlash) {
+        var cdY = cdSlash[3] ? parseInt(cdSlash[3]) : new Date().getFullYear();
+        cdDate = new Date(cdY, parseInt(cdSlash[2]) - 1, parseInt(cdSlash[1]));
+      } else {
+        var cdWord = cdRest.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/);
+        if (cdWord) {
+          var cdMi = MN.findIndex(function (m) { return cdWord[2].includes(m.substring(0, 3)) });
+          if (cdMi === -1) return "No entendí la fecha.";
+          var cdYr = cdWord[3] ? parseInt(cdWord[3]) : new Date().getFullYear();
+          cdDate = new Date(cdYr, cdMi, parseInt(cdWord[1]));
+        }
+      }
+      if (!cdDate) return "No entendí la fecha. Ej: 24 marzo, 24/3";
+      var cdDow = cdDate.getDay(); var cdDayN = DAYS[cdDow === 0 ? 6 : cdDow - 1];
+      var cdMk = cdDate.getFullYear() + "-" + cdDate.getMonth();
+      var cdFeriado = isFeriado(cdDate);
+      var cdCancelled = [];
+      // Find all students who have class on that day
+      for (var cdi = 0; cdi < als.length; cdi++) {
+        var cdAl = als[cdi];
+        if (cdAl.turno.dia !== cdDayN) continue;
+        // Build date with student's time
+        var cdTP = cdAl.turno.hora.split(":");
+        var cdClassDate = new Date(cdDate);
+        cdClassDate.setHours(parseInt(cdTP[0]), parseInt(cdTP[1]), 0, 0);
+        var cdIso = cdClassDate.toISOString();
+        // Check not already cancelled
+        var cdAlreadyCanc = (cdAl.canc || []).some(function (c) { return c.iso === cdIso });
+        if (cdAlreadyCanc) continue;
+        // Check if month has 5 classes — if so, feriado doesn't get recovery (like 5th class)
+        var cdTotalInMonth = classesInMonth(cdAl.turno.dia, cdAl.turno.hora, cdDate.getMonth(), cdDate.getFullYear()).length;
+        var cdNoRecup = cdFeriado && cdTotalInMonth === 5;
+        await supa("cancelaciones", "POST", "", { alumno_id: cdAl.id, fecha_iso: cdIso, mes_key: cdMk, sin_recuperacion: cdNoRecup, sin_aviso: false, is_extra: false });
+        await supa("historial", "POST", "", { alumno_id: cdAl.id, accion: (cdFeriado ? "🏳 Feriado " : "⛔ Suspendida ") + fmtDateShort(cdClassDate) + (cdNoRecup ? " (sin recup, 5 clases)" : " (con recup)") });
+        cdCancelled.push({ nombre: cdAl.nombre, sede: cdAl.sede, hora: cdAl.turno.hora, conRecup: !cdNoRecup });
+      }
+      await refreshData();
+      if (!cdCancelled.length) return "No hay alumnos con clase el " + cdDayN + " " + cdDate.getDate() + "/" + (cdDate.getMonth() + 1);
+      var cdR = "✓ " + (cdFeriado ? "FERIADO" : "Clases canceladas") + " — " + cdDayN + " " + cdDate.getDate() + "/" + (cdDate.getMonth() + 1) + "\n\n";
+      var cdConR = cdCancelled.filter(function (c) { return c.conRecup });
+      var cdSinR = cdCancelled.filter(function (c) { return !c.conRecup });
+      if (cdConR.length) {
+        cdR += "Con recuperación (" + cdConR.length + "):\n";
+        cdConR.forEach(function (c) { cdR += "  • " + c.nombre + " — " + c.sede + " " + c.hora + "\n" });
+      }
+      if (cdSinR.length) {
+        cdR += "\nSin recuperación — mes de 5 clases (" + cdSinR.length + "):\n";
+        cdSinR.forEach(function (c) { cdR += "  • " + c.nombre + " — " + c.sede + " " + c.hora + "\n" });
+      }
+      return cdR;
+    }
+
+    // CANCELAR CLASE (admin cancela por alumno individual)
     if (t.startsWith("cancelar clase")) {
       var ccMatch = txt.match(/cancelar\s*clase\s*:?\s*(.+)/i);
       if (!ccMatch) return "Formato: cancelar clase: Nombre / fecha (ej: cancelar clase: Victoria / 6 marzo)";
@@ -669,7 +747,7 @@ function AdminChat(props) {
       return "✓ Clase agendada para " + agAl.nombre + "\n📅 " + fmtDateShort(agDate) + " — " + agAl.sede + "\nTipo: " + (agTipo === "regalo" ? "🎁 regalo" : "🔄 recuperación") + "\nCupo restante: " + (agCupo.libre - 1);
     }
 
-    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios, cancelar clase, agendar clase"
+    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios, cancelar clase, cancelar clases, agendar clase"
   }
 
   async function send() {
@@ -1163,15 +1241,25 @@ function AlumnoCal(props) {
   var curMonth = now.getMonth(); var curYear = now.getFullYear();
   var curClasses = classesInMonth(al.turno.dia, al.turno.hora, curMonth, curYear);
   var cm = (al.canc || []).filter(function (c) { return c.mk === curMk });
-  curClasses.forEach(function (d) { if (!cm.some(function (c) { return c.iso === d.toISOString() })) all.push({ date: d, extra: false, tot: curClasses.length }) });
+  curClasses.forEach(function (d) {
+    var cancelled = cm.some(function (c) { return c.iso === d.toISOString() });
+    var feriado = isFeriado(d);
+    if (cancelled && feriado) { all.push({ date: d, extra: false, tot: curClasses.length, feriado: true, cancelled: true }) }
+    else if (!cancelled) { all.push({ date: d, extra: false, tot: curClasses.length, feriado: feriado }) }
+  });
   // Also add classes from paid months (other than current)
   var pm = Object.keys(al.mp || {});
   pm.forEach(function (mk) {
-    if (mk === curMk) return; // already added
+    if (mk === curMk) return;
     var p = mk.split("-").map(Number);
     var mc = classesInMonth(al.turno.dia, al.turno.hora, p[1], p[0]);
     var cmk = (al.canc || []).filter(function (c) { return c.mk === mk });
-    mc.forEach(function (d) { if (!cmk.some(function (c) { return c.iso === d.toISOString() })) all.push({ date: d, extra: false, tot: mc.length }) })
+    mc.forEach(function (d) {
+      var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() });
+      var feriado = isFeriado(d);
+      if (cancelled && feriado) { all.push({ date: d, extra: false, tot: mc.length, feriado: true, cancelled: true }) }
+      else if (!cancelled) { all.push({ date: d, extra: false, tot: mc.length, feriado: feriado }) }
+    })
   });
   (al.ex || []).forEach(function (e) { all.push({ date: new Date(e.date), extra: true, tot: 0 }) });
   all.sort(function (a, b) { return a.date - b.date });
@@ -1211,7 +1299,18 @@ function AlumnoCal(props) {
       {statsBlocks.map(function (sb) { return (<div key={sb.mk} style={{ background: "#f8f6f2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid " + grayBlue }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{sb.label}</span><span style={{ fontSize: 12, color: copper, fontFamily: ft, fontWeight: 600 }}>{sb.stats.clasesEfectivas + "/" + CLASES_BASE + " clases"}</span></div>{sb.stats.pendientes > 0 ? <div style={{ background: "#fdf6ec", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: copper, fontFamily: ft, border: "1px solid #e8d4b0" }}>{"🔄 " + sb.stats.pendientes + " clase(s) pendiente(s) de recuperar"}</div> : null}{sb.stats.is5 && sb.stats.cancTotal === 0 ? <div style={{ fontSize: 12, color: olive, fontFamily: ft, marginTop: 4 }}>{"✦ 5ta clase regalo activa"}</div> : null}</div>) })}
       {al.reg > 0 ? <div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: copper, fontFamily: ft }}>{"🎁 Tenés " + al.reg + " clase(s) de regalo"}</div> : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {all.map(function (c, i) { var h = hrsUntil(c.date); var past = h < 0; return (<div key={i} style={{ padding: "14px 16px", borderRadius: 10, background: past ? cream : white, border: "1px solid " + (past ? grayBlue : gold), opacity: past ? 0.45 : 1 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: 600, color: navy, fontFamily: ft, fontSize: 14 }}>{fmtDate(c.date)}</span>{c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}</div>{!past && h < 24 ? <div style={{ fontSize: 11, color: copper, marginTop: 5, fontFamily: ft }}>{"⚠ Menos de 24h"}</div> : null}</div>) })}</div></div>);
+        {all.map(function (c, i) { var h = hrsUntil(c.date); var past = h < 0; var fer = c.feriado; var canc = c.cancelled;
+          return (<div key={i} style={{ padding: "14px 16px", borderRadius: 10, background: canc ? "#fef2f2" : fer ? "#fdf6ec" : past ? cream : white, border: "1px solid " + (canc ? "#fca5a5" : fer ? "#e8d4b0" : past ? grayBlue : gold), opacity: past && !canc ? 0.45 : 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 600, color: canc ? "#991b1b" : navy, fontFamily: ft, fontSize: 14, textDecoration: canc ? "line-through" : "none" }}>{fmtDate(c.date)}</span>
+              {canc && fer ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span>
+                : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span>
+                : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}
+            </div>
+            {canc && fer ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{"Clase cancelada — " + (c.tot === 5 ? "mes de 5 clases, no se recupera" : "podrás recuperarla cuando gustes")}</div> : null}
+            {!canc && fer && !past ? <div style={{ fontSize: 12, color: "#92651e", marginTop: 5, fontFamily: ft }}>{"⚠ Feriado — esta clase será cancelada"}</div> : null}
+            {!past && !fer && !canc && h < 24 ? <div style={{ fontSize: 11, color: copper, marginTop: 5, fontFamily: ft }}>{"⚠ Menos de 24h"}</div> : null}
+          </div>) })}</div></div>);
 }
 
 // ====== MINI CALENDAR COMPONENT ======
