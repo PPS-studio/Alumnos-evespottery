@@ -129,8 +129,6 @@ function getAlumnosForSlot(allAls, sede, dia, hora, fecha) {
   var dateStr = fecha.toISOString(); var result = [];
   allAls.forEach(function (a) {
     if (a.sede !== sede) return;
-    var mk = fecha.getFullYear() + "-" + fecha.getMonth();
-    if (!(a.mp || {})[mk]) return;
     if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }) }
     (a.ex || []).forEach(function (e) { if (e.date === dateStr && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: "recuperacion" }) })
   });
@@ -840,7 +838,7 @@ function ProfeView(props) {
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" ? <ProfeClases profe={profe} als={als} /> : null}
         {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
-        {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} /> : null}
+        {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} /> : null}
       </div>
     </div>);
 }
@@ -1005,11 +1003,12 @@ function ProfeLista(props) {
 
 // ====== ENCARGADA VISTA SEDE ======
 function EncargadaVista(props) {
-  var profe = props.profe, als = props.als;
+  var profe = props.profe, als = props.als, refreshData = props.refreshData;
   var sede = profe.sedeEncargada;
   var now = new Date(); var year = now.getFullYear(); var month = now.getMonth();
   var _subTab = useState("cal"), subTab = _subTab[0], setSubTab = _subTab[1];
   var _selDate = useState(null), selDate = _selDate[0], setSelDate = _selDate[1];
+  var _busy = useState(null), busyId = _busy[0], setBusyId = _busy[1];
   var _selSlot = useState(null), selSlot = _selSlot[0], setSelSlot = _selSlot[1];
   var _calMonth = useState({ m: month, y: year }), calM = _calMonth[0], setCalM = _calMonth[1];
 
@@ -1200,9 +1199,16 @@ function EncargadaVista(props) {
                 </div>
                 <div style={{ border: "1px solid #fca5a5", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
                   {pendPago.map(function (a) {
+                    var isLoading = busyId === a.id;
                     return (<div key={a.id} style={{ padding: "10px 14px", borderBottom: "1px solid #fca5a5", background: white, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div><p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{a.nombre}</p><p style={{ margin: 0, fontFamily: ft, fontSize: 11, color: grayWarm }}>{a.turno.dia + " " + a.turno.hora}</p></div>
-                      <span style={{ fontSize: 11, color: "#991b1b", fontFamily: ft, fontWeight: 600 }}>{"No pagó"}</span>
+                      <button disabled={isLoading} onClick={async function () {
+                        setBusyId(a.id);
+                        await supa("meses_pagados", "POST", "", { alumno_id: a.id, mes_key: curMk });
+                        await supa("historial", "POST", "", { alumno_id: a.id, accion: "💳 " + MN[month] + " " + year + " (enc: " + profe.nombre + ")" });
+                        await refreshData();
+                        setBusyId(null);
+                      }} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #b5c48a", background: isLoading ? cream : "#f0f5e8", color: isLoading ? grayWarm : "#5a6a2a", cursor: isLoading ? "default" : "pointer", fontFamily: ft, fontSize: 12, fontWeight: 700 }}>{isLoading ? "..." : "✓ Marcar pagado"}</button>
                     </div>)
                   })}
                 </div>
