@@ -48,6 +48,7 @@ function feriadosInMonth(day, time, month, year) {
   var all = classesInMonth(day, time, month, year);
   return all.filter(function (d) { return isFeriado(d) });
 }
+function normDay(s) { return s.replace(/sabado/gi, "sábado").replace(/miercoles/gi, "miércoles") }
 
 function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/\d{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
 function classesInMonth(day, time, month, year) {
@@ -446,7 +447,7 @@ function AdminChat(props) {
         else { tel2 = parts2[1]; sedePart = parts2[2]; turnoPart = parts2[3] }
       } else { nom3 = parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i, "").trim(); sedePart = parts2[1]; turnoPart = parts2[2] }
       var sede2 = sedePart.toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
-      var tm = turnoPart.toLowerCase().match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      var tm = normDay(turnoPart.toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!tm) return "No entendí el turno. Ej: martes 14:30"; var sk = tm[1] + "-" + tm[2];
       if (SCHED[sede2].indexOf(sk) === -1) return "✗ No existe ese horario en " + sede2 + ".\nDisponibles: " + SCHED[sede2].map(function (s) { return s.replace("-", " ") }).join(", ");
       var newPw = genPw("eves");
@@ -516,7 +517,7 @@ function AdminChat(props) {
       var ahClean = ahRest.replace(/\([^)]+\)/, "");
       var ahParts = ahClean.split("/").map(function (s) { return s.trim() });
       if (ahParts.length < 2) return "Formato: abrir horario: viernes 18:30 / Palermo / 4 cupos (marzo 2026)";
-      var ahTurno = ahParts[0].toLowerCase().match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      var ahTurno = normDay(ahParts[0].toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!ahTurno) return "No entendí el horario. Ej: viernes 18:30";
       var ahSede = ahParts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
       var ahCupos = 8;
@@ -544,7 +545,7 @@ function AdminChat(props) {
       var chClean = chRest.replace(/\([^)]+\)/, "");
       var chParts = chClean.split("/").map(function (s) { return s.trim() });
       if (chParts.length < 2) return "Formato: cerrar horario: viernes 18:30 / Palermo (marzo 2026)";
-      var chTurno = chParts[0].toLowerCase().match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      var chTurno = normDay(chParts[0].toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!chTurno) return "No entendí el horario.";
       var chSede = chParts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
       var chDia = chTurno[1]; var chHora = chTurno[2];
@@ -697,7 +698,7 @@ function AdminChat(props) {
       var agAl = als[agIdx];
       // Parse: "viernes 18:30 7 marzo" or "viernes 18:30 7/3"
       var agSlotStr = agParts[1].toLowerCase();
-      var agTurno = agSlotStr.match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
+      var agTurno = normDay(agSlotStr).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!agTurno) return "No entendí el horario. Ej: viernes 18:30 7 marzo";
       var agDia = agTurno[1]; var agHora = agTurno[2];
       // Parse date part (after the time)
