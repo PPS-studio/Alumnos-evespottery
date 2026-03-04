@@ -1244,9 +1244,11 @@ function AlumnoCal(props) {
   var cm = (al.canc || []).filter(function (c) { return c.mk === curMk });
   curClasses.forEach(function (d) {
     var cancelled = cm.some(function (c) { return c.iso === d.toISOString() });
+    var cancelInfo = cm.find(function (c) { return c.iso === d.toISOString() });
     var feriado = isFeriado(d);
-    if (cancelled && feriado) { all.push({ date: d, extra: false, tot: curClasses.length, feriado: true, cancelled: true }) }
-    else if (!cancelled) { all.push({ date: d, extra: false, tot: curClasses.length, feriado: feriado }) }
+    var sinRecup = cancelInfo ? cancelInfo.noR : false;
+    if (cancelled) { all.push({ date: d, extra: false, tot: curClasses.length, feriado: feriado, cancelled: true, sinRecup: sinRecup }) }
+    else { all.push({ date: d, extra: false, tot: curClasses.length, feriado: feriado }) }
   });
   // Also add classes from paid months (other than current)
   var pm = Object.keys(al.mp || {});
@@ -1257,9 +1259,11 @@ function AlumnoCal(props) {
     var cmk = (al.canc || []).filter(function (c) { return c.mk === mk });
     mc.forEach(function (d) {
       var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() });
+      var cancelInfo = cmk.find(function (c) { return c.iso === d.toISOString() });
       var feriado = isFeriado(d);
-      if (cancelled && feriado) { all.push({ date: d, extra: false, tot: mc.length, feriado: true, cancelled: true }) }
-      else if (!cancelled) { all.push({ date: d, extra: false, tot: mc.length, feriado: feriado }) }
+      var sinRecup = cancelInfo ? cancelInfo.noR : false;
+      if (cancelled) { all.push({ date: d, extra: false, tot: mc.length, feriado: feriado, cancelled: true, sinRecup: sinRecup }) }
+      else { all.push({ date: d, extra: false, tot: mc.length, feriado: feriado }) }
     })
   });
   (al.ex || []).forEach(function (e) { all.push({ date: new Date(e.date), extra: true, tot: 0 }) });
@@ -1297,6 +1301,15 @@ function AlumnoCal(props) {
           ) : null}
         </div>
       ) : null}
+      {/* Show pending recoveries even if unpaid */}
+      {(function () {
+        var pendRecup = all.filter(function (c) { return c.cancelled && !c.sinRecup });
+        if (pendRecup.length === 0) return null;
+        return (<div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 12, padding: "12px 16px", marginBottom: 14 }}>
+          <p style={{ margin: 0, fontWeight: 700, color: copper, fontSize: 14, fontFamily: ft }}>{"🔄 Tenés " + pendRecup.length + " clase" + (pendRecup.length > 1 ? "s" : "") + " para recuperar"}</p>
+          {!paidCurrent ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#991b1b", fontFamily: ft }}>{"Pagá la cuota para poder agendar tu recuperación"}</p> : null}
+        </div>)
+      })()}
       {statsBlocks.map(function (sb) { return (<div key={sb.mk} style={{ background: "#f8f6f2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid " + grayBlue }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{sb.label}</span><span style={{ fontSize: 12, color: copper, fontFamily: ft, fontWeight: 600 }}>{sb.stats.clasesEfectivas + "/" + CLASES_BASE + " clases"}</span></div>{sb.stats.pendientes > 0 ? <div style={{ background: "#fdf6ec", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: copper, fontFamily: ft, border: "1px solid #e8d4b0" }}>{"🔄 " + sb.stats.pendientes + " clase(s) pendiente(s) de recuperar"}</div> : null}{sb.stats.is5 && sb.stats.cancTotal === 0 ? <div style={{ fontSize: 12, color: olive, fontFamily: ft, marginTop: 4 }}>{"✦ 5ta clase regalo activa"}</div> : null}</div>) })}
       {al.reg > 0 ? <div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: copper, fontFamily: ft }}>{"🎁 Tenés " + al.reg + " clase(s) de regalo"}</div> : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1305,10 +1318,11 @@ function AlumnoCal(props) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 600, color: canc ? "#991b1b" : navy, fontFamily: ft, fontSize: 14, textDecoration: canc ? "line-through" : "none" }}>{fmtDate(c.date)}</span>
               {canc && fer ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span>
+                : canc ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>CANCELADA</span>
                 : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span>
                 : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}
             </div>
-            {canc && fer ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{"Clase cancelada — " + (c.tot === 5 ? "mes de 5 clases, no se recupera" : "podrás recuperarla cuando gustes")}</div> : null}
+            {canc ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{c.sinRecup ? (fer ? "Feriado — mes de 5 clases, no se recupera" : "Clase cancelada — no se recupera") : "Clase cancelada — podrás recuperarla cuando gustes"}</div> : null}
             {!canc && fer && !past ? <div style={{ fontSize: 12, color: "#92651e", marginTop: 5, fontFamily: ft }}>{"⚠ Feriado — esta clase será cancelada"}</div> : null}
             {!past && !fer && !canc && h < 24 ? <div style={{ fontSize: 11, color: copper, marginTop: 5, fontFamily: ft }}>{"⚠ Menos de 24h"}</div> : null}
           </div>) })}</div></div>);
