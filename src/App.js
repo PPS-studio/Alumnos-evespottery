@@ -844,8 +844,9 @@ function GenericLogin(props) {
 // ====== PROFESORA VIEW ======
 function ProfeView(props) {
   var profe = props.profe, als = props.als, refreshData = props.refreshData, listas = props.listas;
-  var _tab = useState("clases"), tab = _tab[0], setTab = _tab[1];
   var isEncargada = profe.esEncargada;
+  var defaultTab = isEncargada ? "lista" : "clases";
+  var _tab = useState(defaultTab), tab = _tab[0], setTab = _tab[1];
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ padding: "10px 18px", background: white, borderBottom: "1px solid " + grayBlue }}>
@@ -853,14 +854,16 @@ function ProfeView(props) {
         <p style={{ margin: 0, color: grayWarm, fontSize: 12, fontFamily: ft }}>{profe.sede}</p>
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
-        <button onClick={function () { setTab("clases") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "clases" ? white : cream, color: tab === "clases" ? navy : grayWarm, borderBottom: tab === "clases" ? "2px solid " + copper : "2px solid transparent" }}>{"📅 Mis clases"}</button>
-        <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>{"✋ Tomar lista"}</button>
-        {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>{"🏠 Vista sede"}</button> : null}
+        {!isEncargada ? <button onClick={function () { setTab("clases") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "clases" ? white : cream, color: tab === "clases" ? navy : grayWarm, borderBottom: tab === "clases" ? "2px solid " + copper : "2px solid transparent" }}>{"📅 Mis clases"}</button> : null}
+        <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>{"✋ Lista"}</button>
+        {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>{"🏠 Sede"}</button> : null}
+        {isEncargada ? <button onClick={function () { setTab("finanzas") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "finanzas" ? white : cream, color: tab === "finanzas" ? navy : grayWarm, borderBottom: tab === "finanzas" ? "2px solid " + copper : "2px solid transparent" }}>{"📊 Finanzas"}</button> : null}
       </div>
       <div style={{ flex: 1, overflow: "auto", background: white }}>
-        {tab === "clases" ? <ProfeClases profe={profe} als={als} /> : null}
+        {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
         {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
-        {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} /> : null}
+        {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
+        {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
       </div>
     </div>);
 }
@@ -1035,9 +1038,11 @@ function ProfeLista(props) {
 // ====== ENCARGADA VISTA SEDE ======
 function EncargadaVista(props) {
   var profe = props.profe, als = props.als, refreshData = props.refreshData;
+  var subTabOverride = props.subTabOverride;
   var sede = profe.sedeEncargada;
   var now = new Date(); var year = now.getFullYear(); var month = now.getMonth();
-  var _subTab = useState("cal"), subTab = _subTab[0], setSubTab = _subTab[1];
+  var _subTab = useState("cal"), subTabInt = _subTab[0], setSubTab = _subTab[1];
+  var subTab = subTabOverride === "cal" ? subTabInt : (subTabOverride || subTabInt);
   var _selDate = useState(null), selDate = _selDate[0], setSelDate = _selDate[1];
   var _busy = useState(null), busyId = _busy[0], setBusyId = _busy[1];
   var _selSlot = useState(null), selSlot = _selSlot[0], setSelSlot = _selSlot[1];
@@ -1192,12 +1197,20 @@ function EncargadaVista(props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {!subTabOverride ? (
       <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
         <button onClick={function () { setSubTab("cal"); setSelSlot(null) }} style={subBtnStyle(subTab === "cal")}>{"📅 Calendario"}</button>
         <button onClick={function () { setSubTab("alumnos") }} style={subBtnStyle(subTab === "alumnos")}>{"👥 Alumnos"}</button>
         <button onClick={function () { setSubTab("pagos") }} style={subBtnStyle(subTab === "pagos")}>{"💰 Pagos"}</button>
         <button onClick={function () { setSubTab("finanzas") }} style={subBtnStyle(subTab === "finanzas")}>{"📊 Finanzas"}</button>
       </div>
+      ) : subTabOverride === "cal" ? (
+      <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
+        <button onClick={function () { setSubTab("cal"); setSelSlot(null) }} style={subBtnStyle(subTabInt === "cal")}>{"📅 Calendario"}</button>
+        <button onClick={function () { setSubTab("alumnos") }} style={subBtnStyle(subTabInt === "alumnos")}>{"👥 Alumnos"}</button>
+        <button onClick={function () { setSubTab("pagos") }} style={subBtnStyle(subTabInt === "pagos")}>{"💰 Pagos"}</button>
+      </div>
+      ) : null}
       <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
 
         {subTab === "cal" ? (
