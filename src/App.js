@@ -1168,9 +1168,12 @@ function EncargadaVista(props) {
   var iibb = totalTransf * 0.018;
   // Imp cheque: 0.6% sobre movimientos bancarios
   var impCheque = totalTransf * 0.006;
-  // Ganancias: 35% sobre utilidad neta (simplificado)
-  var utilidadNeta = totalIngresos - gastoTotal - ivaTotal - iibb - impCheque;
-  var ganancias = utilidadNeta > 0 ? utilidadNeta * 0.35 : 0;
+  // Todos los impuestos solo sobre transferencias
+  var utilidadTransf = totalTransf - gastoTransf - ivaTotal - iibb - impCheque;
+  var ganancias = utilidadTransf > 0 ? utilidadTransf * 0.35 : 0;
+  var totalImpuestos = ivaTotal + iibb + impCheque + ganancias;
+  var netoTransf = totalTransf - gastoTransf - totalImpuestos;
+  var netoEfectivo = totalEfec - gastoEfec;
 
   var subBtnStyle = function (active) { return { flex: 1, padding: "8px 6px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: ft, background: active ? white : cream, color: active ? navy : grayWarm, borderBottom: active ? "2px solid " + copper : "2px solid transparent", borderTop: "none", borderLeft: "none", borderRight: "none" } };
 
@@ -1439,9 +1442,14 @@ function EncargadaVista(props) {
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>IIBB 1.8% (sobre transf.)</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(iibb))}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>Imp. cheque 0.6%</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(impCheque))}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>Ganancias 35% (est.)</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(ganancias))}</span></div>
-                <div style={{ borderTop: "1px solid " + grayBlue, paddingTop: 8, marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontFamily: ft, fontSize: 14, fontWeight: 700, color: navy }}>Resultado neto est.</span>
-                  <span style={{ fontFamily: ft, fontSize: 14, fontWeight: 700, color: utilidadNeta - ganancias > 0 ? "#5a6a2a" : "#991b1b" }}>{fmtMoney(Math.round(utilidadNeta - ganancias))}</span>
+                <div style={{ borderTop: "1px solid " + grayBlue, paddingTop: 8, marginTop: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: navy }}>Total impuestos</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 700, color: "#991b1b" }}>{fmtMoney(Math.round(totalImpuestos))}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>🏦 Neto en cuenta (después de imp.)</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 700, color: netoTransf >= 0 ? "#5a6a2a" : "#991b1b" }}>{fmtMoney(Math.round(netoTransf))}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>💵 Neto en efectivo</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 700, color: netoEfectivo >= 0 ? "#5a6a2a" : "#991b1b" }}>{fmtMoney(Math.round(netoEfectivo))}</span></div>
+                  <div style={{ borderTop: "1px solid " + grayBlue, paddingTop: 6, marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontFamily: ft, fontSize: 15, fontWeight: 700, color: navy }}>Total neto</span>
+                    <span style={{ fontFamily: ft, fontSize: 15, fontWeight: 700, color: netoTransf + netoEfectivo > 0 ? "#5a6a2a" : "#991b1b" }}>{fmtMoney(Math.round(netoTransf + netoEfectivo))}</span>
+                  </div>
                 </div>
               </div>
             </div>
