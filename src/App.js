@@ -49,6 +49,12 @@ function feriadosInMonth(day, time, month, year) {
   return all.filter(function (d) { return isFeriado(d) });
 }
 function normDay(s) { return s.replace(/sabado/gi, "sábado").replace(/miercoles/gi, "miércoles") }
+function allClassesForAlumno(al, month, year) {
+  var c1 = classesInMonth(al.turno.dia, al.turno.hora, month, year);
+  if (al.turno2) { var c2 = classesInMonth(al.turno2.dia, al.turno2.hora, month, year); c1 = c1.concat(c2) }
+  c1.sort(function (a, b) { return a - b });
+  return c1;
+}
 
 function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/\d{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
 function classesInMonth(day, time, month, year) {
@@ -93,7 +99,8 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
   var ex = extras.filter(function (e) { return e.alumno_id === row.id }).map(function (e) {
     return { date: e.fecha_iso, mk: e.mes_key, tipo: e.tipo }
   });
-  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x" }
+  var turno2 = row.turno2_dia && row.turno2_hora ? { dia: row.turno2_dia, hora: row.turno2_hora } : null;
+  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, turno2: turno2, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x" }
 }
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
@@ -103,8 +110,9 @@ function buildProfeFromRow(row) {
 
 function getMonthStats(al, mk) {
   var p = mk.split("-").map(Number);
-  var totalInMonth = classesInMonth(al.turno.dia, al.turno.hora, p[1], p[0]).length;
-  var is5 = totalInMonth === 5;
+  var totalInMonth = allClassesForAlumno(al, p[1], p[0]).length;
+  var baseCls = al.frecuencia === "2x" ? 8 : CLASES_BASE;
+  var is5 = al.frecuencia !== "2x" && totalInMonth === 5;
   var cancThisMonth = (al.canc || []).filter(function (c) { return c.mk === mk });
   var recThisMonth = (al.ex || []).filter(function (e) { return e.mk === mk });
   var cancSinRecup = cancThisMonth.filter(function (c) { return c.noR }).length;
@@ -119,7 +127,9 @@ function getCupoForSlot(allAls, sede, dia, hora, fecha, maxCupo) {
   var dateStr = fecha.toISOString(); var fijos = 0; var recups = 0;
   allAls.forEach(function (a) {
     if (a.sede !== sede) return;
-    if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) fijos++ }
+    var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
+    var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
+    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) fijos++ }
     (a.ex || []).forEach(function (e) { if (e.date === dateStr) recups++ })
   });
   var cap = maxCupo || MAX_CUPO;
@@ -129,14 +139,21 @@ function getAlumnosForSlot(allAls, sede, dia, hora, fecha) {
   var dateStr = fecha.toISOString(); var result = [];
   allAls.forEach(function (a) {
     if (a.sede !== sede) return;
-    if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }) }
+    var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
+    var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
+    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }) }
     (a.ex || []).forEach(function (e) { if (e.date === dateStr && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: "recuperacion" }) })
   });
   return result;
 }
 function countFijosForSlot(allAls, sede, dia, hora, fecha) {
   var dateStr = fecha.toISOString(); var count = 0;
-  allAls.forEach(function (a) { if (a.sede !== sede) return; if (a.turno.dia === dia && a.turno.hora === hora) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) count++ } });
+  allAls.forEach(function (a) {
+    if (a.sede !== sede) return;
+    var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
+    var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
+    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) count++ }
+  });
   return count;
 }
 
@@ -597,21 +614,26 @@ function AdminChat(props) {
       // Find all students who have class on that day
       for (var cdi = 0; cdi < als.length; cdi++) {
         var cdAl = als[cdi];
-        if (cdAl.turno.dia !== cdDayN) continue;
-        // Build date with student's time
-        var cdTP = cdAl.turno.hora.split(":");
-        var cdClassDate = new Date(cdDate);
-        cdClassDate.setHours(parseInt(cdTP[0]), parseInt(cdTP[1]), 0, 0);
-        var cdIso = cdClassDate.toISOString();
-        // Check not already cancelled
-        var cdAlreadyCanc = (cdAl.canc || []).some(function (c) { return c.iso === cdIso });
-        if (cdAlreadyCanc) continue;
-        // Check if month has 5 classes — if so, feriado doesn't get recovery (like 5th class)
-        var cdTotalInMonth = classesInMonth(cdAl.turno.dia, cdAl.turno.hora, cdDate.getMonth(), cdDate.getFullYear()).length;
-        var cdNoRecup = cdFeriado && cdTotalInMonth === 5;
-        await supa("cancelaciones", "POST", "", { alumno_id: cdAl.id, fecha_iso: cdIso, mes_key: cdMk, sin_recuperacion: cdNoRecup, sin_aviso: false, is_extra: false });
-        await supa("historial", "POST", "", { alumno_id: cdAl.id, accion: (cdFeriado ? "🏳 Feriado " : "⛔ Suspendida ") + fmtDateShort(cdClassDate) + (cdNoRecup ? " (sin recup, 5 clases)" : " (con recup)") });
-        cdCancelled.push({ nombre: cdAl.nombre, sede: cdAl.sede, hora: cdAl.turno.hora, conRecup: !cdNoRecup });
+        var cdTurnos = [cdAl.turno];
+        if (cdAl.turno2) cdTurnos.push(cdAl.turno2);
+        for (var cdt = 0; cdt < cdTurnos.length; cdt++) {
+          var cdTurno = cdTurnos[cdt];
+          if (cdTurno.dia !== cdDayN) continue;
+          // Build date with student's time
+          var cdTP = cdTurno.hora.split(":");
+          var cdClassDate = new Date(cdDate);
+          cdClassDate.setHours(parseInt(cdTP[0]), parseInt(cdTP[1]), 0, 0);
+          var cdIso = cdClassDate.toISOString();
+          // Check not already cancelled
+          var cdAlreadyCanc = (cdAl.canc || []).some(function (c) { return c.iso === cdIso });
+          if (cdAlreadyCanc) continue;
+          // Check if month has 5 classes — if so, feriado doesn't get recovery (like 5th class)
+          var cdTotalInMonth = allClassesForAlumno(cdAl, cdDate.getMonth(), cdDate.getFullYear()).length;
+          var cdNoRecup = cdFeriado && cdTotalInMonth === 5;
+          await supa("cancelaciones", "POST", "", { alumno_id: cdAl.id, fecha_iso: cdIso, mes_key: cdMk, sin_recuperacion: cdNoRecup, sin_aviso: false, is_extra: false });
+          await supa("historial", "POST", "", { alumno_id: cdAl.id, accion: (cdFeriado ? "🏳 Feriado " : "⛔ Suspendida ") + fmtDateShort(cdClassDate) + (cdNoRecup ? " (sin recup, 5 clases)" : " (con recup)") });
+          cdCancelled.push({ nombre: cdAl.nombre, sede: cdAl.sede, hora: cdTurno.hora, conRecup: !cdNoRecup });
+        }
       }
       await refreshData();
       if (!cdCancelled.length) return "No hay alumnos con clase el " + cdDayN + " " + cdDate.getDate() + "/" + (cdDate.getMonth() + 1);
@@ -891,17 +913,21 @@ function ProfeLista(props) {
   var _msg = useState(""), msg = _msg[0], setMsg = _msg[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
 
-  var now = new Date(); var limit = new Date(now); limit.setDate(limit.getDate() + 7);
+  var now = new Date(); 
+  var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  var limit = new Date(now); limit.setDate(limit.getDate() + 7);
   var clases = [];
   profe.horarios.forEach(function (h) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
-    for (var dd = new Date(now); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
+    // Show from start of month to 7 days ahead
+    for (var dd = new Date(monthStart); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
       var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
       if (DAYS[dayIdx] === dia) {
         var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0);
         var iso = dt.toISOString();
         var yaTomada = listas.some(function (l) { return l.profe === profe.nombre && l.fecha_iso === iso });
-        if (!yaTomada) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso }) }
+        var isPast = dt < now;
+        if (!yaTomada) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: isPast }) }
       }
     }
   });
@@ -960,7 +986,12 @@ function ProfeLista(props) {
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 14px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Tomar lista</h3>
       {clases.length === 0 ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 14 }}>No hay clases pendientes de lista.</p> :
-        clases.map(function (c, i) { return (<button key={i} onClick={function () { selectClass(c) }} style={Object.assign({}, bS, { marginBottom: 8 })}>{fmtDate(c.date) + " — " + c.alumnos.length + " alumno" + (c.alumnos.length !== 1 ? "s" : "")}</button>) })}</div>);
+        clases.map(function (c, i) { return (<button key={i} onClick={function () { selectClass(c) }} style={Object.assign({}, bS, { marginBottom: 8, borderColor: c.pendiente ? "#fca5a5" : grayBlue, background: c.pendiente ? "#fef2f2" : white })}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{fmtDate(c.date) + " — " + c.alumnos.length + " alumno" + (c.alumnos.length !== 1 ? "s" : "")}</span>
+            {c.pendiente ? <span style={{ fontSize: 10, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft, fontWeight: 700 }}>PENDIENTE</span> : null}
+          </div>
+        </button>) })}</div>);
 
   var allIds = sel.alumnos.map(function (a) { return a.alumno.id }).concat(extras.map(function (e) { return e.id }));
   var allMarked = allIds.every(function (id) { return marks[id] === true || marks[id] === false });
@@ -1043,7 +1074,9 @@ function EncargadaVista(props) {
     var result = [];
     als.forEach(function (a) {
       if (a.sede !== sede) return;
-      if (a.turno.dia === dia && a.turno.hora === hora) {
+      var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
+      var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
+      if (matchT1 || matchT2) {
         var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr });
         if (!cancelled) result.push({ alumno: a, tipo: "fijo" });
         else result.push({ alumno: a, tipo: "canceló" });
@@ -1069,7 +1102,93 @@ function EncargadaVista(props) {
   var pendPago = sedeAls.filter(function (a) { return !(a.mp || {})[curMk] });
   var alDia = sedeAls.filter(function (a) { return !!(a.mp || {})[curMk] });
 
+  var _payingAl = useState(null), payingAl = _payingAl[0], setPayingAl = _payingAl[1];
+  var _payForma = useState(""), payForma = _payForma[0], setPayForma = _payForma[1];
+  var _payMonto = useState(""), payMonto = _payMonto[0], setPayMonto = _payMonto[1];
+  var _movimientos = useState([]), movs = _movimientos[0], setMovs = _movimientos[1];
+  var _movTipo = useState("gasto"), movTipo = _movTipo[0], setMovTipo = _movTipo[1];
+  var _movConcepto = useState(""), movConcepto = _movConcepto[0], setMovConcepto = _movConcepto[1];
+  var _movMonto = useState(""), movMonto = _movMonto[0], setMovMonto = _movMonto[1];
+  var _movForma = useState("efectivo"), movForma = _movForma[0], setMovForma = _movForma[1];
+  var _movIva = useState(false), movIva = _movIva[0], setMovIva = _movIva[1];
+  var _pagosData = useState([]), pagosData = _pagosData[0], setPagosData = _pagosData[1];
+
+  // Load movimientos and pagos data
+  useEffect(function () {
+    var mk = now.getFullYear() + "-" + now.getMonth();
+    supa("movimientos", "GET", "?sede=eq." + encodeURIComponent(sede) + "&mes_key=eq." + mk + "&order=created_at.desc").then(function (r) { if (r) setMovs(r) });
+    supa("meses_pagados", "GET", "?order=created_at.desc").then(function (r) { if (r) setPagosData(r) });
+  }, [als]);
+
+  // Financial calculations
+  var finMk = now.getFullYear() + "-" + now.getMonth();
+  var sedePayments = pagosData.filter(function (p) {
+    if (p.mes_key !== finMk) return false;
+    var al = sedeAls.find(function (a) { return a.id === p.alumno_id });
+    return !!al;
+  });
+  var ingTransf = 0, ingEfec = 0;
+  sedePayments.forEach(function (p) {
+    var m = p.monto ? Number(p.monto) : 0;
+    if (p.forma_pago === "transferencia") ingTransf += m;
+    else if (p.forma_pago === "efectivo") ingEfec += m;
+  });
+  // Add manual movimientos
+  var movsIngresos = movs.filter(function (m) { return m.tipo === "ingreso" });
+  var movsGastos = movs.filter(function (m) { return m.tipo === "gasto" });
+  var ingManualTransf = 0, ingManualEfec = 0, gastoTotal = 0;
+  var ivaIngresos = 0, ivaGastos = 0;
+  movsIngresos.forEach(function (m) {
+    var v = Number(m.monto);
+    if (m.forma_pago === "transferencia") { ingManualTransf += v; if (m.incluye_iva) ivaIngresos += v * 0.21 / 1.21 }
+    else { ingManualEfec += v }
+  });
+  movsGastos.forEach(function (m) {
+    var v = Number(m.monto);
+    gastoTotal += v;
+    if (m.incluye_iva) ivaGastos += v * 0.21 / 1.21;
+  });
+  var totalTransf = ingTransf + ingManualTransf;
+  var totalEfec = ingEfec + ingManualEfec;
+  var totalIngresos = totalTransf + totalEfec;
+  // IVA: 21% sobre transferencias de cuotas (neto = bruto/1.21, iva = bruto - neto)
+  var ivaCuotas = ingTransf * 0.21 / 1.21;
+  var ivaTotal = ivaCuotas + ivaIngresos - ivaGastos;
+  // IIBB: 1.8% sobre transferencias brutas
+  var iibb = totalTransf * 0.018;
+  // Imp cheque: 0.6% sobre movimientos bancarios
+  var impCheque = totalTransf * 0.006;
+  // Ganancias: 35% sobre utilidad neta (simplificado)
+  var utilidadNeta = totalIngresos - gastoTotal - ivaTotal - iibb - impCheque;
+  var ganancias = utilidadNeta > 0 ? utilidadNeta * 0.35 : 0;
+
   var subBtnStyle = function (active) { return { flex: 1, padding: "8px 6px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: ft, background: active ? white : cream, color: active ? navy : grayWarm, borderBottom: active ? "2px solid " + copper : "2px solid transparent", borderTop: "none", borderLeft: "none", borderRight: "none" } };
+
+  async function confirmPay() {
+    if (!payingAl || !payForma || !payMonto) return;
+    setBusyId(payingAl.id);
+    await supa("meses_pagados", "POST", "", { alumno_id: payingAl.id, mes_key: curMk, forma_pago: payForma, monto: parseFloat(payMonto), registrado_por: profe.nombre });
+    await supa("historial", "POST", "", { alumno_id: payingAl.id, accion: "💳 " + MN[month] + " " + year + " — " + payForma + " " + fmtMoney(parseFloat(payMonto)) + " (enc: " + profe.nombre + ")" });
+    await refreshData();
+    setBusyId(null); setPayingAl(null); setPayForma(""); setPayMonto("");
+  }
+
+  async function addMov() {
+    if (!movConcepto || !movMonto) return;
+    setBusyId("mov");
+    await supa("movimientos", "POST", "", { sede: sede, mes_key: finMk, tipo: movTipo, concepto: movConcepto, monto: parseFloat(movMonto), forma_pago: movForma, incluye_iva: movIva });
+    var r = await supa("movimientos", "GET", "?sede=eq." + encodeURIComponent(sede) + "&mes_key=eq." + finMk + "&order=created_at.desc");
+    if (r) setMovs(r);
+    setBusyId(null); setMovConcepto(""); setMovMonto(""); setMovIva(false);
+  }
+
+  async function deleteMov(id) {
+    setBusyId("del" + id);
+    await supa("movimientos", "DELETE", "?id=eq." + id);
+    var r = await supa("movimientos", "GET", "?sede=eq." + encodeURIComponent(sede) + "&mes_key=eq." + finMk + "&order=created_at.desc");
+    if (r) setMovs(r);
+    setBusyId(null);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -1077,6 +1196,7 @@ function EncargadaVista(props) {
         <button onClick={function () { setSubTab("cal"); setSelSlot(null) }} style={subBtnStyle(subTab === "cal")}>{"📅 Calendario"}</button>
         <button onClick={function () { setSubTab("alumnos") }} style={subBtnStyle(subTab === "alumnos")}>{"👥 Alumnos"}</button>
         <button onClick={function () { setSubTab("pagos") }} style={subBtnStyle(subTab === "pagos")}>{"💰 Pagos"}</button>
+        <button onClick={function () { setSubTab("finanzas") }} style={subBtnStyle(subTab === "finanzas")}>{"📊 Finanzas"}</button>
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
 
@@ -1165,7 +1285,7 @@ function EncargadaVista(props) {
             <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sedeAls.length + " alumno" + (sedeAls.length !== 1 ? "s" : "") + " activo" + (sedeAls.length !== 1 ? "s" : "")}</p>
             {SCHED[sede].map(function (slot) {
               var parts = slot.split("-"); var dia = parts[0], hora = parts[1];
-              var slotAls = sedeAls.filter(function (a) { return a.turno.dia === dia && a.turno.hora === hora });
+              var slotAls = sedeAls.filter(function (a) { var m1 = a.turno.dia === dia && a.turno.hora === hora; var m2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora; return m1 || m2 });
               if (!slotAls.length) return null;
               return (
                 <div key={slot} style={{ marginBottom: 14 }}>
@@ -1192,6 +1312,22 @@ function EncargadaVista(props) {
             <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"💰 Pagos " + MN[month] + " — " + sede}</h3>
             <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{alDia.length + " al día · " + pendPago.length + " pendiente" + (pendPago.length !== 1 ? "s" : "")}</p>
 
+            {/* Payment form modal */}
+            {payingAl ? (
+              <div style={{ background: "#f8f6f2", borderRadius: 12, padding: 16, border: "1px solid " + gold, marginBottom: 16 }}>
+                <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{"Registrar pago — " + payingAl.nombre}</p>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <button onClick={function () { setPayForma("efectivo") }} style={{ flex: 1, padding: "10px", borderRadius: 8, border: payForma === "efectivo" ? "2px solid " + copper : "1px solid " + grayBlue, background: payForma === "efectivo" ? "#fdf6ec" : white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>{"💵 Efectivo"}</button>
+                  <button onClick={function () { setPayForma("transferencia") }} style={{ flex: 1, padding: "10px", borderRadius: 8, border: payForma === "transferencia" ? "2px solid " + copper : "1px solid " + grayBlue, background: payForma === "transferencia" ? "#fdf6ec" : white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>{"🏦 Transferencia"}</button>
+                </div>
+                <input type="number" value={payMonto} onChange={function (e) { setPayMonto(e.target.value) }} placeholder="Monto ($)" style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={function () { setPayingAl(null); setPayForma(""); setPayMonto("") }} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid " + grayBlue, background: white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+                  <button disabled={!payForma || !payMonto || busyId === payingAl.id} onClick={confirmPay} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: payForma && payMonto ? copper : cream, color: payForma && payMonto ? white : grayWarm, fontFamily: ft, fontWeight: 700, fontSize: 13, cursor: payForma && payMonto ? "pointer" : "default" }}>{busyId === payingAl.id ? "..." : "✓ Confirmar"}</button>
+                </div>
+              </div>
+            ) : null}
+
             {pendPago.length > 0 ? (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ padding: "10px 14px", background: "#fef2f2", borderRadius: "10px 10px 0 0", border: "1px solid #fca5a5" }}>
@@ -1199,16 +1335,9 @@ function EncargadaVista(props) {
                 </div>
                 <div style={{ border: "1px solid #fca5a5", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
                   {pendPago.map(function (a) {
-                    var isLoading = busyId === a.id;
                     return (<div key={a.id} style={{ padding: "10px 14px", borderBottom: "1px solid #fca5a5", background: white, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div><p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{a.nombre}</p><p style={{ margin: 0, fontFamily: ft, fontSize: 11, color: grayWarm }}>{a.turno.dia + " " + a.turno.hora}</p></div>
-                      <button disabled={isLoading} onClick={async function () {
-                        setBusyId(a.id);
-                        await supa("meses_pagados", "POST", "", { alumno_id: a.id, mes_key: curMk });
-                        await supa("historial", "POST", "", { alumno_id: a.id, accion: "💳 " + MN[month] + " " + year + " (enc: " + profe.nombre + ")" });
-                        await refreshData();
-                        setBusyId(null);
-                      }} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #b5c48a", background: isLoading ? cream : "#f0f5e8", color: isLoading ? grayWarm : "#5a6a2a", cursor: isLoading ? "default" : "pointer", fontFamily: ft, fontSize: 12, fontWeight: 700 }}>{isLoading ? "..." : "✓ Marcar pagado"}</button>
+                      <button onClick={function () { setPayingAl(a); setPayForma(""); setPayMonto("") }} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #b5c48a", background: "#f0f5e8", color: "#5a6a2a", cursor: "pointer", fontFamily: ft, fontSize: 12, fontWeight: 700 }}>{"✓ Pagó"}</button>
                     </div>)
                   })}
                 </div>
@@ -1222,12 +1351,91 @@ function EncargadaVista(props) {
                 </div>
                 <div style={{ border: "1px solid #b5c48a", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
                   {alDia.map(function (a) {
+                    var pd = sedePayments.find(function (p) { return p.alumno_id === a.id });
                     return (<div key={a.id} style={{ padding: "10px 14px", borderBottom: "1px solid #b5c48a", background: white, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div><p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{a.nombre}</p><p style={{ margin: 0, fontFamily: ft, fontSize: 11, color: grayWarm }}>{a.turno.dia + " " + a.turno.hora}</p></div>
-                      <span style={{ fontSize: 11, color: "#5a6a2a", fontFamily: ft, fontWeight: 600 }}>{"Pagó ✓"}</span>
+                      <span style={{ fontSize: 11, color: "#5a6a2a", fontFamily: ft, fontWeight: 600 }}>{pd && pd.forma_pago ? (pd.forma_pago === "efectivo" ? "💵" : "🏦") + " " + (pd.monto ? fmtMoney(pd.monto) : "") : "Pagó ✓"}</span>
                     </div>)
                   })}
                 </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {subTab === "finanzas" ? (
+          <div>
+            <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"📊 Finanzas " + MN[month] + " — " + sede}</h3>
+
+            {/* Resumen */}
+            <div style={{ background: "#f8f6f2", borderRadius: 12, padding: 16, border: "1px solid " + grayBlue, marginBottom: 14 }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>Resumen del mes</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <div style={{ flex: 1, background: "#f0f5e8", borderRadius: 10, padding: 12, textAlign: "center", border: "1px solid #b5c48a" }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#5a6a2a", fontFamily: ft }}>Ingresos totales</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 700, color: "#5a6a2a", fontFamily: ft }}>{fmtMoney(totalIngresos)}</p>
+                </div>
+                <div style={{ flex: 1, background: "#fef2f2", borderRadius: 10, padding: 12, textAlign: "center", border: "1px solid #fca5a5" }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Gastos totales</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(gastoTotal)}</p>
+                </div>
+              </div>
+              <div style={{ background: white, borderRadius: 10, padding: 12, border: "1px solid " + grayBlue }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>💵 Efectivo (cuotas)</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: navy }}>{fmtMoney(ingEfec)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>🏦 Transferencias (cuotas)</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: navy }}>{fmtMoney(ingTransf)}</span></div>
+                {ingManualEfec > 0 ? <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>💵 Otros ingresos efectivo</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: navy }}>{fmtMoney(ingManualEfec)}</span></div> : null}
+                {ingManualTransf > 0 ? <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>🏦 Otros ingresos transf.</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: navy }}>{fmtMoney(ingManualTransf)}</span></div> : null}
+                <div style={{ borderTop: "1px solid " + grayBlue, paddingTop: 8, marginTop: 6 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>Impuestos estimados:</p>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>IVA 21% (sobre transf.)</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(ivaTotal))}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>IIBB 1.8% (sobre transf.)</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(iibb))}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>Imp. cheque 0.6%</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(impCheque))}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>Ganancias 35% (est.)</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(ganancias))}</span></div>
+                </div>
+                <div style={{ borderTop: "1px solid " + grayBlue, paddingTop: 8, marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontFamily: ft, fontSize: 14, fontWeight: 700, color: navy }}>Resultado neto est.</span>
+                  <span style={{ fontFamily: ft, fontSize: 14, fontWeight: 700, color: utilidadNeta - ganancias > 0 ? "#5a6a2a" : "#991b1b" }}>{fmtMoney(Math.round(utilidadNeta - ganancias))}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cargar movimiento */}
+            <div style={{ background: white, borderRadius: 12, padding: 16, border: "1px solid " + grayBlue, marginBottom: 14 }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>Cargar ingreso / gasto</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <button onClick={function () { setMovTipo("ingreso") }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: movTipo === "ingreso" ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: movTipo === "ingreso" ? "#f0f5e8" : white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{"+ Ingreso"}</button>
+                <button onClick={function () { setMovTipo("gasto") }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: movTipo === "gasto" ? "2px solid #991b1b" : "1px solid " + grayBlue, background: movTipo === "gasto" ? "#fef2f2" : white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{"- Gasto"}</button>
+              </div>
+              <input value={movConcepto} onChange={function (e) { setMovConcepto(e.target.value) }} placeholder="Concepto (ej: materiales, venta pieza...)" style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+              <input type="number" value={movMonto} onChange={function (e) { setMovMonto(e.target.value) }} placeholder="Monto ($)" style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <button onClick={function () { setMovForma("efectivo") }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: movForma === "efectivo" ? "2px solid " + copper : "1px solid " + grayBlue, background: movForma === "efectivo" ? "#fdf6ec" : white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{"💵 Efectivo"}</button>
+                <button onClick={function () { setMovForma("transferencia") }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: movForma === "transferencia" ? "2px solid " + copper : "1px solid " + grayBlue, background: movForma === "transferencia" ? "#fdf6ec" : white, color: navy, fontFamily: ft, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{"🏦 Transferencia"}</button>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: ft, fontSize: 13, color: navy, marginBottom: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={movIva} onChange={function (e) { setMovIva(e.target.checked) }} />
+                {"Incluye IVA (21%)"}
+              </label>
+              <button disabled={!movConcepto || !movMonto || busyId === "mov"} onClick={addMov} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "none", background: movConcepto && movMonto ? copper : cream, color: movConcepto && movMonto ? white : grayWarm, fontFamily: ft, fontWeight: 700, fontSize: 13, cursor: movConcepto && movMonto ? "pointer" : "default" }}>{busyId === "mov" ? "..." : "Guardar"}</button>
+            </div>
+
+            {/* Lista de movimientos */}
+            {movs.length > 0 ? (
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ margin: "0 0 8px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>Movimientos del mes</p>
+                {movs.map(function (m) {
+                  var isIng = m.tipo === "ingreso";
+                  return (<div key={m.id} style={{ padding: "10px 14px", marginBottom: 4, borderRadius: 8, background: isIng ? "#f0f5e8" : "#fef2f2", border: "1px solid " + (isIng ? "#b5c48a" : "#fca5a5"), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{m.concepto}</p>
+                      <p style={{ margin: 0, fontFamily: ft, fontSize: 11, color: grayWarm }}>{(m.forma_pago === "efectivo" ? "💵" : "🏦") + (m.incluye_iva ? " · con IVA" : "")}</p>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: ft, fontSize: 14, fontWeight: 700, color: isIng ? "#5a6a2a" : "#991b1b" }}>{(isIng ? "+" : "-") + fmtMoney(m.monto)}</span>
+                      <button onClick={function () { deleteMov(m.id) }} style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid " + grayBlue, background: white, color: grayWarm, cursor: "pointer", fontSize: 11, fontFamily: ft }}>{"✕"}</button>
+                    </div>
+                  </div>)
+                })}
               </div>
             ) : null}
           </div>
@@ -1246,7 +1454,7 @@ function AlumnoCal(props) {
   // Build classes for current month even if not paid
   var all = [];
   var curMonth = now.getMonth(); var curYear = now.getFullYear();
-  var curClasses = classesInMonth(al.turno.dia, al.turno.hora, curMonth, curYear);
+  var curClasses = allClassesForAlumno(al, curMonth, curYear);
   var cm = (al.canc || []).filter(function (c) { return c.mk === curMk });
   curClasses.forEach(function (d) {
     var cancelled = cm.some(function (c) { return c.iso === d.toISOString() });
@@ -1261,7 +1469,7 @@ function AlumnoCal(props) {
   pm.forEach(function (mk) {
     if (mk === curMk) return;
     var p = mk.split("-").map(Number);
-    var mc = classesInMonth(al.turno.dia, al.turno.hora, p[1], p[0]);
+    var mc = allClassesForAlumno(al, p[1], p[0]);
     var cmk = (al.canc || []).filter(function (c) { return c.mk === mk });
     mc.forEach(function (d) {
       var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() });
@@ -1279,7 +1487,7 @@ function AlumnoCal(props) {
   return (
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 2px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Tus clases</h3>
-      <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{al.turno.dia + " " + al.turno.hora + " · " + al.sede}</p>
+      <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{al.turno.dia + " " + al.turno.hora + (al.turno2 ? " y " + al.turno2.dia + " " + al.turno2.hora : "") + " · " + al.sede}</p>
       {!paidCurrent ? (
         <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5", marginBottom: 14 }}>
           <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 15, fontFamily: ft }}>{"💰 Cuota de " + MN[curMonth] + " pendiente"}</p>
@@ -1400,7 +1608,7 @@ function AlumnoFlow(props) {
     var cls = [];
     pm.forEach(function (mk) {
       var p = mk.split("-").map(Number);
-      var mc = classesInMonth(al.turno.dia, al.turno.hora, p[1], p[0]);
+      var mc = allClassesForAlumno(al, p[1], p[0]);
       var cm = (al.canc || []).filter(function (c) { return c.mk === mk });
       mc.forEach(function (d) { if (hrsUntil(d) > 0 && !cm.some(function (c) { return c.iso === d.toISOString() })) cls.push({ date: d, mk: mk, tot: mc.length, cc: cm.length }) })
     });
@@ -1513,7 +1721,7 @@ function AlumnoFlow(props) {
     // Unpaid current month: can cancel classes but NOT reschedule/recover
     var upUnpaid = [];
     // Show current month classes even without payment
-    var curClasses = classesInMonth(al.turno.dia, al.turno.hora, now.getMonth(), now.getFullYear());
+    var curClasses = allClassesForAlumno(al, now.getMonth(), now.getFullYear());
     var curCanc = (al.canc || []).filter(function (c) { return c.mk === curMk });
     curClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !curCanc.some(function (c) { return c.iso === d.toISOString() })) upUnpaid.push({ date: d, mk: curMk, tot: curClasses.length, cc: curCanc.length }) });
 
@@ -1768,10 +1976,11 @@ export default function App() {
           {route === "admin" && adminAuth ? (
             <>
               {(adminView === "alumna" && logged) || (adminView === "profe" && loggedProfe) ?
-                <button onClick={function () { setLogged(null); setLoggedProfe(null); setAdminView("chat") }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: grayBlue, marginRight: 4 }}>{"← Panel"}</button> : null}
+                <button onClick={function () { setLogged(null); setLoggedProfe(null); setAdminView("chat") }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: grayBlue, marginRight: 4 }}>{"← Admin"}</button> : null}
               <button onClick={function () { setAdminView("chat"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "chat")}>Admin</button>
-              <button onClick={function () { setAdminView("alumna"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "alumna")}>Ver alumna</button>
-              <button onClick={function () { setAdminView("profe"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "profe")}>Ver profe</button>
+              <button onClick={function () { setAdminView("sede"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "sede")}>Palermo</button>
+              <button onClick={function () { setAdminView("alumna"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "alumna")}>Alumna</button>
+              <button onClick={function () { setAdminView("profe"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "profe")}>Profe</button>
               <button onClick={function () { setAdminAuth(false); setAdminView("chat"); setLogged(null); setLoggedProfe(null) }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: "#fca5a5", marginLeft: 4 }}>Salir</button>
             </>
           ) : route === "alumna" && logged ? (
@@ -1805,6 +2014,10 @@ export default function App() {
                 </div>
               </div>
             )
+          ) : adminView === "sede" ? (
+            <div style={{ flex: 1, overflow: "auto", background: white }}>
+              <EncargadaVista profe={{ nombre: "Admin", sede: "Palermo", sedeEncargada: "Palermo", esEncargada: true }} als={als} refreshData={refreshData} />
+            </div>
           ) : adminView === "profe" ? (
             !loggedProfe ? (
               <GenericLogin table="profesoras" allData={profes} onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); setLoggedProfe(p || row) }} subtitle="Seleccioná profesora para ver su vista" skipPw={true} refreshData={refreshData} />
