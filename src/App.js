@@ -110,9 +110,12 @@ function buildProfeFromRow(row) {
 
 function getMonthStats(al, mk) {
   var p = mk.split("-").map(Number);
-  var totalInMonth = allClassesForAlumno(al, p[1], p[0]).length;
+  var allClasses = allClassesForAlumno(al, p[1], p[0]);
+  var totalInMonth = allClasses.length;
+  var feriadosCount = allClasses.filter(function (d) { return isFeriado(d) }).length;
+  var clasesReales = totalInMonth - feriadosCount;
   var baseCls = al.frecuencia === "2x" ? 8 : CLASES_BASE;
-  var is5 = al.frecuencia !== "2x" && totalInMonth === 5;
+  var is5 = al.frecuencia !== "2x" && clasesReales === 5;
   var cancThisMonth = (al.canc || []).filter(function (c) { return c.mk === mk });
   var recThisMonth = (al.ex || []).filter(function (e) { return e.mk === mk });
   var cancSinRecup = cancThisMonth.filter(function (c) { return c.noR }).length;
@@ -201,7 +204,7 @@ function AdminLogin(props) {
 function AdminChat(props) {
   var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase regalo: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Cancelar clases: fecha (feriado/suspensión para todos)\n• Agendar clase: Nombre / día hora fecha\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase a favor: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Cancelar clases: fecha (feriado/suspensión para todos)\n• Agendar clase: Nombre / día hora fecha\n• Alta profe: Nombre / Sede / día hora, día hora\n• Baja profe: Nombre\n• Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario: día hora / Sede / cupos (mes año)\n• Cerrar horario: día hora / Sede (mes año)\n• Ver horarios";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -404,11 +407,11 @@ function AdminChat(props) {
       var r4 = "✦ " + a6.nombre + "\n📍 " + a6.sede + " · " + a6.turno.dia + " " + a6.turno.hora;
       r4 += "\n🔑 Contraseña: " + (a6.pw || "sin pw");
       r4 += "\n💳 Pagó: " + (meses4.length ? meses4.map(function (k) { var p = k.split("-"); return MN[parseInt(p[1])] + " " + p[0] }).join(", ") : "—");
-      r4 += "\n🎁 Regalo: " + (a6.reg || 0);
+      r4 += "\n🎁 A favor: " + (a6.reg || 0);
       meses4.forEach(function (mk3) {
         var stats = getMonthStats(a6, mk3); var p = mk3.split("-").map(Number);
         r4 += "\n\n📅 " + MN[p[1]] + " " + p[0] + ":";
-        r4 += "\n  Clases en mes: " + stats.totalInMonth + (stats.is5 ? " (5ta regalo)" : "");
+        r4 += "\n  Clases en mes: " + stats.totalInMonth + (stats.is5 ? " (5ta clase)" : "");
         r4 += "\n  Cancelaciones: " + stats.cancTotal + (stats.cancSinRecup > 0 ? " (" + stats.cancSinRecup + " sin recup)" : "");
         r4 += "\n  Recuperaciones: " + stats.recuperaciones;
         r4 += "\n  Pendientes: " + stats.pendientes;
@@ -418,14 +421,14 @@ function AdminChat(props) {
     }
 
     // CLASE REGALO
-    if (t.includes("clase regalo") || t.includes("regalar clase")) {
-      var n7 = txt.replace(/clase\s*(de\s*)?regalo\s*:?\s*/i, "").replace(/regalar\s*clase\s*:?\s*/i, "").trim();
-      if (!n7) return "Formato: Clase regalo: Nombre"; var idx7 = findA(n7); if (idx7 === -1) return "✗ No encontré ese nombre.";
+    if (t.includes("clase a favor") || t.includes("clase regalo")) {
+      var n7 = txt.replace(/clase\s*(de\s*)?(regalo|a\s*favor)\s*:?\s*/i, "").trim();
+      if (!n7) return "Formato: Clase a favor: Nombre"; var idx7 = findA(n7); if (idx7 === -1) return "✗ No encontré ese nombre.";
       var al7 = als[idx7];
       await supa("alumnos", "PATCH", "?id=eq." + al7.id, { clase_regalo: (al7.reg || 0) + 1 });
-      await supa("historial", "POST", "", { alumno_id: al7.id, accion: "🎁 Regalo" });
+      await supa("historial", "POST", "", { alumno_id: al7.id, accion: "🎁 A favor" });
       await refreshData();
-      return "✓ Regalo para " + al7.nombre
+      return "✓ Clase a favor para " + al7.nombre
     }
 
     // ACTUALIZAR CUOTA
@@ -484,7 +487,7 @@ function AdminChat(props) {
       await supa("meses_pagados", "POST", "", { alumno_id: al8.id, mes_key: parsed2.key });
       await supa("historial", "POST", "", { alumno_id: al8.id, accion: "💳 " + MN[parsed2.month] + " " + parsed2.year });
       await refreshData();
-      return "✓ " + al8.nombre + " — " + MN[parsed2.month] + " " + parsed2.year + " (" + tc + " clases" + (tc === 5 ? " — 5ta regalo" : "") + ")\nDerecho a " + CLASES_BASE + " clases efectivas."
+      return "✓ " + al8.nombre + " — " + MN[parsed2.month] + " " + parsed2.year + " (" + tc + " clases" + (tc === 5 ? " — 5ta clase" : "") + ")\nDerecho a " + CLASES_BASE + " clases efectivas."
     }
 
     // VER CUOTAS
@@ -754,7 +757,7 @@ function AdminChat(props) {
       var agGift = agAl.reg || 0;
       if (agPend === 0 && agGift === 0) {
         // Check all classes - are they all used?
-        return "✗ " + agAl.nombre + " no tiene clases pendientes de recuperar ni regalos.\nPrimero cancelá una clase con: cancelar clase: " + agAl.nombre + " / fecha";
+        return "✗ " + agAl.nombre + " no tiene clases pendientes de recuperar ni clases a favor.\nPrimero cancelá una clase con: cancelar clase: " + agAl.nombre + " / fecha";
       }
       // Check cupo
       var agCupo = getCupoForSlot(als, agAl.sede, agDia, agHora, agDate);
@@ -765,10 +768,10 @@ function AdminChat(props) {
       await supa("historial", "POST", "", { alumno_id: agAl.id, accion: (agTipo === "regalo" ? "🎁 " : "🔄 ") + "Admin agendó " + fmtDateShort(agDate) });
       if (agTipo === "regalo") await supa("alumnos", "PATCH", "?id=eq." + agAl.id, { clase_regalo: Math.max(0, agGift - 1) });
       await refreshData();
-      return "✓ Clase agendada para " + agAl.nombre + "\n📅 " + fmtDateShort(agDate) + " — " + agAl.sede + "\nTipo: " + (agTipo === "regalo" ? "🎁 regalo" : "🔄 recuperación") + "\nCupo restante: " + (agCupo.libre - 1);
+      return "✓ Clase agendada para " + agAl.nombre + "\n📅 " + fmtDateShort(agDate) + " — " + agAl.sede + "\nTipo: " + (agTipo === "regalo" ? "🎁 a favor" : "🔄 recuperación") + "\nCupo restante: " + (agCupo.libre - 1);
     }
 
-    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase regalo, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios, cancelar clase, cancelar clases, agendar clase"
+    return "No entendí. Probá: ver alumnos, alta alumno, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, abrir horario, cerrar horario, ver horarios, cancelar clase, cancelar clases, agendar clase"
   }
 
   async function send() {
@@ -1579,8 +1582,8 @@ function AlumnoCal(props) {
           {!paidCurrent ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#991b1b", fontFamily: ft }}>{"Pagá la cuota para poder agendar tu recuperación"}</p> : null}
         </div>)
       })()}
-      {statsBlocks.map(function (sb) { return (<div key={sb.mk} style={{ background: "#f8f6f2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid " + grayBlue }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{sb.label}</span><span style={{ fontSize: 12, color: copper, fontFamily: ft, fontWeight: 600 }}>{sb.stats.clasesEfectivas + "/" + CLASES_BASE + " clases"}</span></div>{sb.stats.pendientes > 0 ? <div style={{ background: "#fdf6ec", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: copper, fontFamily: ft, border: "1px solid #e8d4b0" }}>{"🔄 " + sb.stats.pendientes + " clase(s) pendiente(s) de recuperar"}</div> : null}{sb.stats.is5 && sb.stats.cancTotal === 0 ? <div style={{ fontSize: 12, color: olive, fontFamily: ft, marginTop: 4 }}>{"✦ 5ta clase regalo activa"}</div> : null}</div>) })}
-      {al.reg > 0 ? <div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: copper, fontFamily: ft }}>{"🎁 Tenés " + al.reg + " clase(s) de regalo"}</div> : null}
+      {statsBlocks.map(function (sb) { return (<div key={sb.mk} style={{ background: "#f8f6f2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid " + grayBlue }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{sb.label}</span><span style={{ fontSize: 12, color: copper, fontFamily: ft, fontWeight: 600 }}>{sb.stats.clasesEfectivas + "/" + CLASES_BASE + " clases"}</span></div>{sb.stats.pendientes > 0 ? <div style={{ background: "#fdf6ec", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: copper, fontFamily: ft, border: "1px solid #e8d4b0" }}>{"🔄 " + sb.stats.pendientes + " clase(s) pendiente(s) de recuperar"}</div> : null}{sb.stats.is5 && sb.stats.cancTotal === 0 ? <div style={{ fontSize: 12, color: olive, fontFamily: ft, marginTop: 4 }}>{"✦ 5ta clase a favor activa"}</div> : null}</div>) })}
+      {al.reg > 0 ? <div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: copper, fontFamily: ft }}>{"🎁 Tenés " + al.reg + " clase(s) a favor"}</div> : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {all.map(function (c, i) { var h = hrsUntil(c.date); var past = h < 0; var fer = c.feriado; var canc = c.cancelled;
           return (<div key={i} style={{ padding: "14px 16px", borderRadius: 10, background: canc ? "#fef2f2" : fer ? "#fdf6ec" : past ? cream : white, border: "1px solid " + (canc ? "#fca5a5" : fer ? "#e8d4b0" : past ? grayBlue : gold), opacity: past && !canc ? 0.45 : 1 }}>
@@ -1743,7 +1746,7 @@ function AlumnoFlow(props) {
       await supa("cancelaciones", "POST", "", { alumno_id: al.id, fecha_iso: ci.date.toISOString(), mes_key: ci.mk, sin_recuperacion: noR, sin_aviso: false, is_extra: false });
       await supa("historial", "POST", "", { alumno_id: al.id, accion: (noR ? "❌(5ta) " : "❌ ") + fmtDate(ci.date) });
       await refreshData(); setBusy(false);
-      if (noR) { setCanRec(false); setCMsg("¡Gracias por cancelar tu clase! Te comentamos que esta clase no podrías recuperarla ya que era tu 5ta clase, que es de regalo siempre y cuando no faltes a ninguna clase en el mes.\n\nEso sí, si cancelás alguna de tus 4 clases restantes con 24 hs de antelación, podrás recuperarla sin problema.") }
+      if (noR) { setCanRec(false); setCMsg("¡Gracias por cancelar tu clase! Te comentamos que esta clase no podrías recuperarla ya que era tu 5ta clase, que es a favor siempre y cuando no faltes a ninguna clase en el mes.\n\nEso sí, si cancelás alguna de tus 4 clases restantes con 24 hs de antelación, podrás recuperarla sin problema.") }
       else { setCanRec(true); setCMsg("") }
     }
   }
@@ -1816,7 +1819,7 @@ function AlumnoFlow(props) {
           <button onClick={function () { doPayNotif(); setStep("ps") }} disabled={busy} style={bP}>{busy ? "Enviando..." : "✓ Ya hice el pago"}</button>
           {upUnpaid.length > 0 ? <button onClick={function () { setStep("cp_unpaid") }} style={bS(false)}>{"❌  Cancelar una clase"}</button> : null}
           <button disabled style={bS(true)}>{"🔄  Recuperar una clase (pago pendiente)"}</button>
-          <button disabled style={bS(true)}>{"🎁  Usar clase de regalo (pago pendiente)"}</button>
+          <button disabled style={bS(true)}>{"🎁  Usar clase a favor (pago pendiente)"}</button>
         </div>) : null}
       {step === "ps" ? (<div style={{ background: "#f0f5e8", borderRadius: 10, padding: 16 }}><p style={{ margin: 0, color: "#5a6a2a", fontSize: 14, fontFamily: ft }}>{"👍 ¡Gracias! Le avisamos al equipo. Cuando se confirme el pago se habilitarán todas las funciones."}</p><div style={{ marginTop: 12 }}><button onClick={function () { setStep("menu") }} style={bS(false)}>{"← Volver"}</button></div></div>) : null}
       {step === "cp_unpaid" ? (
@@ -1860,7 +1863,7 @@ function AlumnoFlow(props) {
           <button onClick={function () { setStep("cp") }} style={bS(false)}>{"❌  Cancelar una clase"}</button>
           {totalPendientes > 0 ? <button onClick={function () { setStep("rp"); setCalDate(null) }} style={bS(false)}>{"🔄  Recuperar una clase (" + totalPendientes + " pendiente" + (totalPendientes > 1 ? "s" : "") + ")"}</button>
             : <button disabled style={bS(true)}>{"🔄  Recuperar una clase (0 pendientes)"}</button>}
-          {al.reg > 0 ? <button onClick={function () { setStep("go"); setCalDate(null) }} style={bG}>{"🎁  Usar clase de regalo (" + al.reg + ")"}</button> : null}
+          {al.reg > 0 ? <button onClick={function () { setStep("go"); setCalDate(null) }} style={bG}>{"🎁  Usar clase a favor (" + al.reg + ")"}</button> : null}
         </div>) : null}
 
       {step === "cp" ? (
@@ -1884,7 +1887,7 @@ function AlumnoFlow(props) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <p style={{ margin: 0, color: navy, fontWeight: 700, fontFamily: ft }}>{"¿Confirmás cancelar?"}</p>
           <div style={{ background: "#fdf6ec", borderRadius: 10, padding: 14, textAlign: "center", fontSize: 15, color: copper, fontWeight: 600, fontFamily: ft, border: "1px solid #e8d4b0" }}>{fmtDate(sel.date)}{sel.isExtra ? " (recuperación)" : ""}</div>
-          {!sel.isExtra && (function () { var stats = getMonthStats(al, sel.mk); return stats.is5 && stats.cancTotal === 0 ? (<div style={{ background: "#fdf6ec", borderRadius: 10, padding: 12, fontSize: 13, color: "#92651e", fontFamily: ft, border: "1px solid #e8d4b0", lineHeight: 1.5 }}>{"⚠ Este mes tiene 5 clases. Si cancelás esta, no podrás recuperarla (5ta regalo)."}</div>) : null })()}
+          {!sel.isExtra && (function () { var stats = getMonthStats(al, sel.mk); return stats.is5 && stats.cancTotal === 0 ? (<div style={{ background: "#fdf6ec", borderRadius: 10, padding: 12, fontSize: 13, color: "#92651e", fontFamily: ft, border: "1px solid #e8d4b0", lineHeight: 1.5 }}>{"⚠ Este mes tiene 5 clases. Si cancelás esta, no podrás recuperarla (5ta clase)."}</div>) : null })()}
           <button disabled={busy} onClick={function () { doCanc(sel).then(function () { setStep("cd") }) }} style={bD}>{busy ? "Cancelando..." : "Sí, cancelar"}</button>
           <button onClick={function () { setStep("cp") }} style={bS(false)}>{"No, volver"}</button>
         </div>) : null}
@@ -1929,7 +1932,7 @@ function AlumnoFlow(props) {
 
       {step === "go" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <p style={{ margin: 0, color: navy, fontWeight: 700, fontFamily: ft }}>{"🎁 Elegí un día para tu clase de regalo:"}</p>
+          <p style={{ margin: 0, color: navy, fontWeight: 700, fontFamily: ft }}>{"🎁 Elegí un día para tu clase a favor:"}</p>
           <MiniCalendar onSelect={setCalDate} selectedDate={calDate} availableDates={availDates} />
           {calDate ? (slotsForDate.length > 0 ? slotsForDate.map(function (s, i) { return <button key={i} disabled={busy} onClick={function () { doResc(s, true).then(function () { setStep("gd") }) }} style={bG}>{s.hora + " (" + s.cupoLibre + " lugar" + (s.cupoLibre > 1 ? "es" : "") + ")"}</button> }) : <div style={{ background: "#fdf6ec", borderRadius: 10, padding: 12, fontSize: 13, color: "#92651e", fontFamily: ft, border: "1px solid #e8d4b0" }}>{"No hay opciones de clases para recuperar hoy"}</div>) : null}
           <button onClick={reset} style={bS(false)}>{"← Volver al menú"}</button>
@@ -1939,7 +1942,7 @@ function AlumnoFlow(props) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ background: "#fdf6ec", borderRadius: 12, padding: 20, textAlign: "center", border: "1px solid #e8d4b0" }}>
             <p style={{ fontSize: 36, margin: 0 }}>{"🎁"}</p>
-            <p style={{ margin: "8px 0 0", color: copper, fontWeight: 700, fontFamily: ft, fontSize: 16 }}>{"¡Clase de regalo confirmada!"}</p>
+            <p style={{ margin: "8px 0 0", color: copper, fontWeight: 700, fontFamily: ft, fontSize: 16 }}>{"¡¡Clase a favor confirmada!!"}</p>
             <p style={{ margin: "4px 0 0", color: grayWarm, fontSize: 13, fontFamily: ft }}>Ya aparece en tu calendario</p></div>
           <button onClick={reset} style={bS(false)}>{"Volver al menú"}</button>
         </div>) : null}
