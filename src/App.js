@@ -1575,10 +1575,16 @@ function AlumnoCal(props) {
       ) : null}
       {/* Show pending recoveries even if unpaid */}
       {(function () {
-        var pendRecup = all.filter(function (c) { return c.cancelled && !c.sinRecup });
-        if (pendRecup.length === 0) return null;
+        var totalPend = 0;
+        var curMkCheck = now.getFullYear() + "-" + now.getMonth();
+        // Count from current month stats
+        var curStatsCheck = getMonthStats(al, curMkCheck);
+        totalPend += curStatsCheck.pendientes;
+        // Also count from other paid months
+        pm.forEach(function (mk) { if (mk !== curMkCheck) { var s = getMonthStats(al, mk); totalPend += s.pendientes } });
+        if (totalPend === 0) return null;
         return (<div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 12, padding: "12px 16px", marginBottom: 14 }}>
-          <p style={{ margin: 0, fontWeight: 700, color: copper, fontSize: 14, fontFamily: ft }}>{"🔄 Tenés " + pendRecup.length + " clase" + (pendRecup.length > 1 ? "s" : "") + " para recuperar"}</p>
+          <p style={{ margin: 0, fontWeight: 700, color: copper, fontSize: 14, fontFamily: ft }}>{"🔄 Tenés " + totalPend + " clase" + (totalPend > 1 ? "s" : "") + " para recuperar"}</p>
           {!paidCurrent ? <p style={{ margin: "6px 0 0", fontSize: 12, color: "#991b1b", fontFamily: ft }}>{"Pagá la cuota para poder agendar tu recuperación"}</p> : null}
         </div>)
       })()}
