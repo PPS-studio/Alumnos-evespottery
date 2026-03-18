@@ -881,7 +881,7 @@ function ProfeClases(props) {
       var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
       if (DAYS[dayIdx] === dia) {
         var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0);
-        if (dt > now) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); var fijos = countFijosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.length, fijos: fijos }) }
+        if (dt > now) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); var fijos = countFijosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.length, fijos: fijos, feriado: isFeriado(dt) }) }
       }
     }
   });
@@ -892,6 +892,17 @@ function ProfeClases(props) {
       <h3 style={{ margin: "0 0 14px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Próximas clases (7 días)</h3>
       {clases.length === 0 ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 14 }}>No tenés clases próximas.</p> :
         clases.map(function (c, i) {
+          if (c.feriado) {
+            return (<div key={i} style={{ marginBottom: 12, borderRadius: 12, border: "1px solid #e8d4b0", overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fdf6ec" }}>
+                <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{fmtDate(c.date)}</span>
+                <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft, fontWeight: 700 }}>FERIADO</span>
+              </div>
+              <div style={{ padding: "10px 16px", background: "#fdf6ec", borderTop: "1px solid #e8d4b0" }}>
+                <p style={{ margin: 0, fontSize: 13, fontFamily: ft, color: "#92651e", lineHeight: 1.5 }}>{"FERIADO — el taller permanece cerrado"}</p>
+              </div>
+            </div>)
+          }
           var msgText, msgBg, msgBorder, msgColor;
           if (isSI) { msgText = "☀️ ¡Que disfrutes mucho de la clase! Por favor, no te olvides de tomar lista. ¡Gracias! 😊"; msgBg = "#f0f5e8"; msgBorder = "#b5c48a"; msgColor = "#5a6a2a"; }
           else if (c.fijos === 0) { msgText = "🔧 No hay alumnos en este horario, recuerda hacer producción por favor. ¡Que lo disfrutes!"; msgBg = "#f5f0fa"; msgBorder = "#c4b5d4"; msgColor = "#6b5080"; }
@@ -933,7 +944,7 @@ function ProfeLista(props) {
         var iso = dt.toISOString();
         var yaTomada = listas.some(function (l) { return l.profe === profe.nombre && l.fecha_iso === iso });
         var isPast = dt < now;
-        if (!yaTomada) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: isPast }) }
+        if (!yaTomada && !isFeriado(dt)) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: isPast }) }
       }
     }
   });
