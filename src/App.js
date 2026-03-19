@@ -24,7 +24,7 @@ var ft = "'Barlow Semi Condensed',sans-serif";
 var ADMIN_PW = "Clases2026";
 var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "miércoles-18:30", "jueves-18:30", "viernes-18:00", "sábado-10:00"],
-  "Palermo": ["martes-14:30", "martes-18:30", "miércoles-18:30", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
+  "Palermo": ["martes-14:30", "martes-18:30", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
 };
 var MAX_CUPO = 8; var CLASES_BASE = 4;
 var DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
@@ -1251,10 +1251,12 @@ function EncargadaVista(props) {
                   var hasCls = d && classesOnDate[d];
                   var isSel = selDate && d === selDate.getDate() && calM.m === selDate.getMonth() && calM.y === selDate.getFullYear();
                   var isToday = d && now.getDate() === d && now.getMonth() === calM.m && now.getFullYear() === calM.y;
+                  var isFer = d && isFeriado(new Date(calM.y, calM.m, d));
                   return (<div key={i} onClick={function () { if (d) { setSelDate(new Date(calM.y, calM.m, d)); setSelSlot(null) } }}
-                    style={{ padding: "8px 2px", borderRadius: 8, cursor: d ? "pointer" : "default", background: isSel ? copper : hasCls ? "#f0f5e8" : "transparent", color: isSel ? white : hasCls ? "#5a6a2a" : d ? navy : "transparent", fontWeight: isSel || isToday ? 700 : 400, fontSize: 13, fontFamily: ft, border: isToday && !isSel ? "1px solid " + copper : "1px solid transparent", position: "relative" }}>
+                    style={{ padding: "8px 2px", borderRadius: 8, cursor: d ? "pointer" : "default", background: isSel ? copper : isFer ? "#fdf6ec" : hasCls ? "#f0f5e8" : "transparent", color: isSel ? white : isFer ? "#f59e0b" : hasCls ? "#5a6a2a" : d ? navy : "transparent", fontWeight: isSel || isToday ? 700 : 400, fontSize: 13, fontFamily: ft, border: isToday && !isSel ? "1px solid " + copper : "1px solid transparent", position: "relative" }}>
                     {d || ""}
-                    {hasCls && !isSel ? <div style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: "#5a6a2a" }} /> : null}
+                    {isFer && !isSel ? <div style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: "#f59e0b" }} /> : null}
+                    {hasCls && !isFer && !isSel ? <div style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: "#5a6a2a" }} /> : null}
                   </div>)
                 })}
               </div>
@@ -1264,16 +1266,20 @@ function EncargadaVista(props) {
             {selDate && !selSlot ? (
               <div>
                 <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>
-                  {selDate.getDate() + " de " + MN[selDate.getMonth()] + " — " + (selClasses.length ? selClasses.length + " clase" + (selClasses.length > 1 ? "s" : "") : "Sin clases")}
+                  {selDate.getDate() + " de " + MN[selDate.getMonth()] + (isFeriado(selDate) ? " — FERIADO" : " — " + (selClasses.length ? selClasses.length + " clase" + (selClasses.length > 1 ? "s" : "") : "Sin clases"))}
                 </p>
-                {selClasses.map(function (c, i) {
+                {isFeriado(selDate) ? (
+                  <div style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #e8d4b0", background: "#fdf6ec" }}>
+                    <p style={{ margin: 0, fontSize: 13, fontFamily: ft, color: "#92651e", fontWeight: 600 }}>{"FERIADO — el taller permanece cerrado"}</p>
+                  </div>
+                ) : selClasses.map(function (c, i) {
                   return (<button key={i} onClick={function () { setSelSlot(c) }} style={{ display: "block", width: "100%", textAlign: "left", padding: "12px 14px", marginBottom: 6, borderRadius: 10, border: "1px solid " + grayBlue, background: c.past ? "#f5f5f0" : white, opacity: c.past ? 0.6 : 1, cursor: "pointer", fontFamily: ft }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontWeight: 600, color: navy, fontSize: 14 }}>{c.hora + " — " + c.dia}</span>
                       <span style={{ fontSize: 12, color: copper, fontWeight: 600 }}>{c.ocupado + " alumno" + (c.ocupado !== 1 ? "s" : "") + " · " + c.libre + " libre" + (c.libre !== 1 ? "s" : "")}</span>
                     </div>
                   </button>)
-                })}
+                }))}
               </div>
             ) : null}
 
@@ -1644,11 +1650,13 @@ function MiniCalendar(props) {
         {dayLabels.map(function (l) { return <div key={l} style={{ fontSize: 11, color: grayWarm, fontFamily: ft, fontWeight: 600, padding: 4 }}>{l}</div> })}
         {cells.map(function (d, i) {
           var sel = isSel(d); var avail = hasSlots(d); var today = new Date(); var isToday = d && today.getDate() === d && today.getMonth() === cm.m && today.getFullYear() === cm.y;
-          return (<div key={i} onClick={function () { if (d) { var dt = new Date(cm.y, cm.m, d); onSelect(dt) } }} style={{ padding: "8px 2px", borderRadius: 8, cursor: d ? "pointer" : "default", background: sel ? copper : avail ? "#f0f5e8" : "transparent", color: sel ? white : avail ? "#5a6a2a" : d ? navy : "transparent", fontWeight: sel || isToday ? 700 : 400, fontSize: 13, fontFamily: ft, border: isToday && !sel ? "1px solid " + copper : "1px solid transparent" }}>{d || ""}</div>)
+          var isFer = d && isFeriado(new Date(cm.y, cm.m, d));
+          return (<div key={i} onClick={function () { if (d) { var dt = new Date(cm.y, cm.m, d); onSelect(dt) } }} style={{ padding: "8px 2px", borderRadius: 8, cursor: d ? "pointer" : "default", background: sel ? copper : isFer ? "#fdf6ec" : avail ? "#f0f5e8" : "transparent", color: sel ? white : isFer ? "#f59e0b" : avail ? "#5a6a2a" : d ? navy : "transparent", fontWeight: sel || isToday ? 700 : 400, fontSize: 13, fontFamily: ft, border: isToday && !sel ? "1px solid " + copper : "1px solid transparent" }}>{d || ""}{isFer && !sel ? <div style={{ position: "absolute", bottom: 1, left: "50%", transform: "translateX(-50%)", fontSize: 6 }}>{"🏳"}</div> : null}</div>)
         })}
       </div>
       <div style={{ marginTop: 8, display: "flex", gap: 12, fontSize: 11, fontFamily: ft, color: grayWarm }}>
         <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#f0f5e8", marginRight: 4, verticalAlign: "middle" }} />Con horarios</span>
+        <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#fdf6ec", marginRight: 4, verticalAlign: "middle", border: "1px solid #f59e0b" }} />Feriado</span>
         <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: copper, marginRight: 4, verticalAlign: "middle" }} />Seleccionado</span>
       </div>
     </div>);
@@ -1714,7 +1722,7 @@ function AlumnoFlow(props) {
         // Check if this slot is closed
         if (closedSet[parts[0] + "-" + parts[1] + "-" + mk]) return;
         classesInMonth(parts[0], parts[1], p[1], p[0]).forEach(function (d) {
-          if (hrsUntil(d) > 24) {
+          if (hrsUntil(d) > 24 && !isFeriado(d)) {
             var cupo = getCupoForSlot(allAls, al.sede, parts[0], parts[1], d);
             if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: parts[0], hora: parts[1] })
           }
@@ -1731,7 +1739,7 @@ function AlumnoFlow(props) {
       if (vm.indexOf(mk) === -1) return;
       var p = mk.split("-").map(Number);
       classesInMonth(h.dia, h.hora, p[1], p[0]).forEach(function (d) {
-        if (hrsUntil(d) > 24) {
+        if (hrsUntil(d) > 24 && !isFeriado(d)) {
           var cupo = getCupoForSlot(allAls, al.sede, h.dia, h.hora, d, h.cupos);
           if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: h.dia, hora: h.hora })
         }
