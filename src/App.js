@@ -1172,6 +1172,10 @@ function EncargadaVista(props) {
   var totalTransf = ingTransf + ingManualTransf;
   var totalEfec = ingEfec + ingManualEfec;
   var totalIngresos = totalTransf + totalEfec;
+  // IVA: 21% sobre ingresos transferencia, menos IVA crédito fiscal de facturas recibidas
+  var ivaDebito = totalTransf * 0.21 / 1.21;
+  var ivaAPagar = ivaDebito - ivaGastos;
+  if (ivaAPagar < 0) ivaAPagar = 0;
   // IIBB: 1.8% sobre ingresos por transferencia
   var iibb = totalTransf * 0.018;
   // Imp cheque: 0.6% sobre ingresos por transferencia
@@ -1397,48 +1401,55 @@ function EncargadaVista(props) {
 
         {subTab === "finanzas" ? (
           <div>
-            <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"📊 Finanzas " + MN[month] + " — " + sede}</h3>
+            <h3 style={{ margin: "0 0 12px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"📊 Finanzas " + MN[month] + " — " + sede}</h3>
 
-            {/* Resumen */}
-            <div style={{ background: "#f8f6f2", borderRadius: 12, padding: 16, border: "1px solid " + grayBlue, marginBottom: 14 }}>
-
-              {/* Ingresos grandes */}
-              <p style={{ margin: "0 0 8px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>Ingresos del mes</p>
-              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {/* EFECTIVO */}
+            <div style={{ background: "#f8f6f2", borderRadius: 12, padding: 16, border: "1px solid " + grayBlue, marginBottom: 12 }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>💵 Efectivo</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 <div style={{ flex: 1, background: "#f0f5e8", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid #b5c48a" }}>
-                  <p style={{ margin: 0, fontSize: 11, color: "#5a6a2a", fontFamily: ft }}>🏦 Transferencia</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: "#5a6a2a", fontFamily: ft }}>{fmtMoney(totalTransf)}</p>
-                </div>
-                <div style={{ flex: 1, background: "#f0f5e8", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid #b5c48a" }}>
-                  <p style={{ margin: 0, fontSize: 11, color: "#5a6a2a", fontFamily: ft }}>💵 Efectivo</p>
+                  <p style={{ margin: 0, fontSize: 11, color: "#5a6a2a", fontFamily: ft }}>Ingresos</p>
                   <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: "#5a6a2a", fontFamily: ft }}>{fmtMoney(totalEfec)}</p>
                 </div>
-              </div>
-
-              {/* Saldos grandes */}
-              <p style={{ margin: "0 0 8px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>Lo que queda después de pagos</p>
-              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                <div style={{ flex: 1, background: white, borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid " + grayBlue }}>
-                  <p style={{ margin: 0, fontSize: 11, color: navy, fontFamily: ft }}>🏦 En cuenta</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: saldoCuenta >= 0 ? "#5a6a2a" : "#991b1b", fontFamily: ft }}>{fmtMoney(Math.round(saldoCuenta))}</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 10, color: grayWarm, fontFamily: ft }}>{"(después de gastos, IIBB e imp. cheque)"}</p>
-                </div>
-                <div style={{ flex: 1, background: white, borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid " + grayBlue }}>
-                  <p style={{ margin: 0, fontSize: 11, color: navy, fontFamily: ft }}>💵 En efectivo</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: saldoEfectivo >= 0 ? "#5a6a2a" : "#991b1b", fontFamily: ft }}>{fmtMoney(Math.round(saldoEfectivo))}</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 10, color: grayWarm, fontFamily: ft }}>{"(después de gastos)"}</p>
+                <div style={{ flex: 1, background: "#fef2f2", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid #fca5a5" }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Gastos</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(gastoEfec)}</p>
                 </div>
               </div>
+              <div style={{ background: saldoEfectivo >= 0 ? "#f0f5e8" : "#fef2f2", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid " + (saldoEfectivo >= 0 ? "#b5c48a" : "#fca5a5") }}>
+                <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft }}>Total en efectivo</p>
+                <p style={{ margin: "4px 0 0", fontSize: 26, fontWeight: 700, color: saldoEfectivo >= 0 ? "#5a6a2a" : "#991b1b", fontFamily: ft }}>{fmtMoney(Math.round(saldoEfectivo))}</p>
+              </div>
+            </div>
 
-              {/* Detalle */}
-              <div style={{ background: white, borderRadius: 10, padding: 12, border: "1px solid " + grayBlue }}>
-                <p style={{ margin: "0 0 6px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>Detalle</p>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>🏦 Ingresos transferencia</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#5a6a2a" }}>{fmtMoney(totalTransf)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>🏦 Gastos transferencia</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{"-" + fmtMoney(gastoTransf)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>🏦 IIBB 1.8%</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{"-" + fmtMoney(Math.round(iibb))}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>🏦 Imp. cheque 0.6%</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{"-" + fmtMoney(Math.round(impCheque))}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>💵 Ingresos efectivo</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#5a6a2a" }}>{fmtMoney(totalEfec)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 12, color: grayWarm }}>💵 Gastos efectivo</span><span style={{ fontFamily: ft, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{"-" + fmtMoney(gastoEfec)}</span></div>
+            {/* TRANSFERENCIA */}
+            <div style={{ background: "#f8f6f2", borderRadius: 12, padding: 16, border: "1px solid " + grayBlue, marginBottom: 12 }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>🏦 Cuenta</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <div style={{ flex: 1, background: "#f0f5e8", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid #b5c48a" }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#5a6a2a", fontFamily: ft }}>Ingresos</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: "#5a6a2a", fontFamily: ft }}>{fmtMoney(totalTransf)}</p>
+                </div>
+                <div style={{ flex: 1, background: "#fef2f2", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid #fca5a5" }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Gastos</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(Math.round(gastoTransf + iibb + impCheque))}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 9, color: grayWarm, fontFamily: ft }}>{"(pagos + IIBB " + fmtMoney(Math.round(iibb)) + " + imp.cheque " + fmtMoney(Math.round(impCheque)) + ")"}</p>
+                </div>
+              </div>
+              <div style={{ background: saldoCuenta >= 0 ? "#f0f5e8" : "#fef2f2", borderRadius: 10, padding: 14, textAlign: "center", border: "1px solid " + (saldoCuenta >= 0 ? "#b5c48a" : "#fca5a5") }}>
+                <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft }}>Total en cuenta</p>
+                <p style={{ margin: "4px 0 0", fontSize: 26, fontWeight: 700, color: saldoCuenta >= 0 ? "#5a6a2a" : "#991b1b", fontFamily: ft }}>{fmtMoney(Math.round(saldoCuenta))}</p>
+              </div>
+            </div>
+
+            {/* IVA estimado */}
+            <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5", marginBottom: 14 }}>
+              <p style={{ margin: "0 0 8px", fontWeight: 700, color: "#991b1b", fontFamily: ft, fontSize: 15 }}>{"IVA estimado — " + MN[month]}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 13, color: grayWarm }}>IVA débito (21% s/transferencias)</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: "#991b1b" }}>{fmtMoney(Math.round(ivaDebito))}</span></div>
+              {ivaGastos > 0 ? <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontFamily: ft, fontSize: 13, color: grayWarm }}>IVA crédito (facturas con IVA)</span><span style={{ fontFamily: ft, fontSize: 13, fontWeight: 600, color: "#5a6a2a" }}>{"-" + fmtMoney(Math.round(ivaGastos))}</span></div> : null}
+              <div style={{ borderTop: "1px solid #fca5a5", paddingTop: 8, marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontFamily: ft, fontSize: 18, fontWeight: 700, color: "#991b1b" }}>A pagar</span>
+                <span style={{ fontFamily: ft, fontSize: 18, fontWeight: 700, color: "#991b1b" }}>{fmtMoney(Math.round(ivaAPagar))}</span>
               </div>
             </div>
 
