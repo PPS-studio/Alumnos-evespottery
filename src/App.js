@@ -1274,7 +1274,7 @@ function EncargadaVista(props) {
                       <span style={{ fontSize: 12, color: copper, fontWeight: 600 }}>{c.ocupado + " alumno" + (c.ocupado !== 1 ? "s" : "") + " · " + c.libre + " libre" + (c.libre !== 1 ? "s" : "")}</span>
                     </div>
                   </button>)
-                }))}
+                })}
               </div>
             ) : null}
 
