@@ -24,7 +24,7 @@ var ft = "'Barlow Semi Condensed',sans-serif";
 var ADMIN_PW = "Clases2026";
 var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "miércoles-18:30", "jueves-18:30", "viernes-18:00", "sábado-10:00"],
-  "Palermo": ["martes-14:30", "martes-18:30", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
+  "Palermo": ["martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
 };
 var MAX_CUPO = 8; var CLASES_BASE = 4;
 var DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
