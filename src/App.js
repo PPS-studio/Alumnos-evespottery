@@ -1333,7 +1333,7 @@ function EncargadaVista(props) {
                     {slotAls.map(function (a) {
                       var paid = !!(a.mp || {})[curMk];
                       return (<div key={a.id} style={{ padding: "8px 12px", borderBottom: "1px solid " + grayBlue, display: "flex", justifyContent: "space-between", alignItems: "center", background: white }}>
-                        <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}</span>
+                        <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}{a.reg > 0 ? <span style={{ fontSize: 10, color: copper, marginLeft: 4 }}>{"🎁" + a.reg}</span> : null}</span>
                         <span style={{ fontSize: 11, fontFamily: ft, color: paid ? "#5a6a2a" : "#991b1b", fontWeight: 600 }}>{paid ? "✓ pagó" : "✗ debe"}</span>
                       </div>)
                     })}
@@ -1701,7 +1701,7 @@ function AlumnoFlow(props) {
         // Check if this slot is closed
         if (closedSet[parts[0] + "-" + parts[1] + "-" + mk]) return;
         classesInMonth(parts[0], parts[1], p[1], p[0]).forEach(function (d) {
-          if (hrsUntil(d) > 24 && !isFeriado(d)) {
+          if (hrsUntil(d) > 0 && !isFeriado(d)) {
             var cupo = getCupoForSlot(allAls, al.sede, parts[0], parts[1], d);
             if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: parts[0], hora: parts[1] })
           }
@@ -1718,7 +1718,7 @@ function AlumnoFlow(props) {
       if (vm.indexOf(mk) === -1) return;
       var p = mk.split("-").map(Number);
       classesInMonth(h.dia, h.hora, p[1], p[0]).forEach(function (d) {
-        if (hrsUntil(d) > 24 && !isFeriado(d)) {
+        if (hrsUntil(d) > 0 && !isFeriado(d)) {
           var cupo = getCupoForSlot(allAls, al.sede, h.dia, h.hora, d, h.cupos);
           if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: h.dia, hora: h.hora })
         }
