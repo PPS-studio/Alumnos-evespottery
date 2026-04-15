@@ -24,7 +24,7 @@ var ft = "'Barlow Semi Condensed',sans-serif";
 var ADMIN_PW = "Clases2026";
 var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "miércoles-18:30", "jueves-18:30", "viernes-18:00", "sábado-10:00"],
-  "Palermo": ["martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
+  "Palermo": ["lunes-18:30", "martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
 };
 var MAX_CUPO = 8; var CLASES_BASE = 4;
 var DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
@@ -859,15 +859,101 @@ function ProfeView(props) {
       <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
         {!isEncargada ? <button onClick={function () { setTab("clases") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "clases" ? white : cream, color: tab === "clases" ? navy : grayWarm, borderBottom: tab === "clases" ? "2px solid " + copper : "2px solid transparent" }}>{"📅 Mis clases"}</button> : null}
         <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>{"✋ Lista"}</button>
+        {!isEncargada ? <button onClick={function () { setTab("alumnos") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "alumnos" ? white : cream, color: tab === "alumnos" ? navy : grayWarm, borderBottom: tab === "alumnos" ? "2px solid " + copper : "2px solid transparent" }}>{"👥 Alumnos"}</button> : null}
         {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>{"🏠 Sede"}</button> : null}
         {isEncargada ? <button onClick={function () { setTab("finanzas") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "finanzas" ? white : cream, color: tab === "finanzas" ? navy : grayWarm, borderBottom: tab === "finanzas" ? "2px solid " + copper : "2px solid transparent" }}>{"📊 Finanzas"}</button> : null}
       </div>
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
         {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
+        {tab === "alumnos" && !isEncargada ? <ProfeAlumnos profe={profe} als={als} /> : null}
         {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
         {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
       </div>
+    </div>);
+}
+
+function ProfeAlumnos(props) {
+  var profe = props.profe, als = props.als;
+  var _comentarios = useState([]), comentarios = _comentarios[0], setComentarios = _comentarios[1];
+  var _selAl = useState(null), selAl = _selAl[0], setSelAl = _selAl[1];
+  var _nuevoComment = useState(""), nuevoComment = _nuevoComment[0], setNuevoComment = _nuevoComment[1];
+  var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
+
+  // Get alumnos that have classes in this profe's schedule
+  var profeAls = als.filter(function (a) {
+    if (a.sede !== profe.sede) return false;
+    return profe.horarios.some(function (h) {
+      var parts = h.split("-");
+      var matchT1 = a.turno.dia === parts[0] && a.turno.hora === parts[1];
+      var matchT2 = a.turno2 && a.turno2.dia === parts[0] && a.turno2.hora === parts[1];
+      return matchT1 || matchT2;
+    });
+  });
+
+  function loadComentarios() {
+    supa("comentarios_profe", "GET", "?order=created_at.desc").then(function (r) { if (r) setComentarios(r) });
+  }
+  useEffect(function () { loadComentarios() }, []);
+
+  async function addComment() {
+    if (!selAl || !nuevoComment.trim() || busy) return;
+    setBusy(true);
+    await supa("comentarios_profe", "POST", "", { alumno_id: selAl.id, profe_nombre: profe.nombre, comentario: nuevoComment.trim() });
+    setNuevoComment("");
+    loadComentarios();
+    setBusy(false);
+  }
+
+  function getCommentsFor(alId) {
+    return comentarios.filter(function (c) { return c.alumno_id === alId });
+  }
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"👥 Mis alumnos"}</h3>
+      <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 12, fontFamily: ft }}>{"Tocá un alumno para dejar un comentario para administración"}</p>
+      {profe.horarios.map(function (h) {
+        var parts = h.split("-"); var dia = parts[0], hora = parts[1];
+        var slotAls = profeAls.filter(function (a) { var m1 = a.turno.dia === dia && a.turno.hora === hora; var m2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora; return m1 || m2 });
+        if (!slotAls.length) return null;
+        return (
+          <div key={h} style={{ marginBottom: 14 }}>
+            <div style={{ padding: "8px 12px", background: "#f8f6f2", borderRadius: "8px 8px 0 0", border: "1px solid " + grayBlue, borderBottom: "none" }}>
+              <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>{dia + " " + hora}</span>
+              <span style={{ fontSize: 12, color: grayWarm, fontFamily: ft, marginLeft: 8 }}>{"(" + slotAls.length + ")"}</span>
+            </div>
+            <div style={{ border: "1px solid " + grayBlue, borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
+              {slotAls.map(function (a) {
+                var comms = getCommentsFor(a.id);
+                var isSel = selAl && selAl.id === a.id;
+                return (<div key={a.id}>
+                  <div onClick={function () { setSelAl(isSel ? null : a); setNuevoComment("") }} style={{ padding: "10px 12px", borderBottom: "1px solid " + grayBlue, background: isSel ? "#fdf6ec" : white, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontFamily: ft, fontSize: 13, color: navy, fontWeight: 500 }}>{a.nombre}</span>
+                    <span style={{ fontSize: 11, color: grayWarm, fontFamily: ft }}>{comms.length > 0 ? "💬 " + comms.length : ""}</span>
+                  </div>
+                  {isSel ? (
+                    <div style={{ padding: "12px 14px", background: "#faf7f2", borderBottom: "1px solid " + grayBlue }}>
+                      {comms.length > 0 ? (
+                        <div style={{ marginBottom: 10 }}>
+                          {comms.map(function (c) {
+                            var d = new Date(c.created_at);
+                            return (<div key={c.id} style={{ padding: "8px 10px", marginBottom: 4, background: white, borderRadius: 6, border: "1px solid " + grayBlue }}>
+                              <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft, lineHeight: 1.4 }}>{c.comentario}</p>
+                              <p style={{ margin: "3px 0 0", fontSize: 10, color: grayWarm, fontFamily: ft }}>{c.profe_nombre + " · " + d.getDate() + "/" + (d.getMonth() + 1) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0")}</p>
+                            </div>)
+                          })}
+                        </div>
+                      ) : null}
+                      <textarea value={nuevoComment} onChange={function (e) { setNuevoComment(e.target.value) }} placeholder="Escribí un comentario para administración (ej: pagó $95000 efectivo, llegó tarde, etc)" style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 6, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+                      <button onClick={addComment} disabled={!nuevoComment.trim() || busy} style={{ width: "100%", marginTop: 8, padding: "8px", borderRadius: 6, border: "none", background: nuevoComment.trim() ? copper : cream, color: nuevoComment.trim() ? white : grayWarm, fontFamily: ft, fontWeight: 700, fontSize: 13, cursor: nuevoComment.trim() ? "pointer" : "default" }}>{busy ? "Enviando..." : "Enviar comentario"}</button>
+                    </div>
+                  ) : null}
+                </div>)
+              })}
+            </div>
+          </div>);
+      })}
     </div>);
 }
 
@@ -1131,12 +1217,14 @@ function EncargadaVista(props) {
   var _movForma = useState("efectivo"), movForma = _movForma[0], setMovForma = _movForma[1];
   var _movIva = useState(false), movIva = _movIva[0], setMovIva = _movIva[1];
   var _pagosData = useState([]), pagosData = _pagosData[0], setPagosData = _pagosData[1];
+  var _comentariosData = useState([]), comentariosData = _comentariosData[0], setComentariosData = _comentariosData[1];
 
   // Load movimientos and pagos data
   useEffect(function () {
     var mk = now.getFullYear() + "-" + now.getMonth();
     supa("movimientos", "GET", "?sede=eq." + encodeURIComponent(sede) + "&mes_key=eq." + mk + "&order=created_at.desc").then(function (r) { if (r) setMovs(r) });
     supa("meses_pagados", "GET", "?order=created_at.desc").then(function (r) { if (r) setPagosData(r) });
+    supa("comentarios_profe", "GET", "?order=created_at.desc").then(function (r) { if (r) setComentariosData(r) });
   }, [als]);
 
   // Financial calculations
@@ -1315,7 +1403,9 @@ function EncargadaVista(props) {
           </div>
         ) : null}
 
-        {subTab === "alumnos" ? (
+        {subTab === "alumnos" ? (function () {
+          var _selAlEnc = useState(null), selAlEnc = _selAlEnc[0], setSelAlEnc = _selAlEnc[1];
+          return (
           <div>
             <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"👥 Alumnos — " + sede}</h3>
             <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sedeAls.length + " alumno" + (sedeAls.length !== 1 ? "s" : "") + " activo" + (sedeAls.length !== 1 ? "s" : "")}</p>
@@ -1332,16 +1422,32 @@ function EncargadaVista(props) {
                   <div style={{ border: "1px solid " + grayBlue, borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
                     {slotAls.map(function (a) {
                       var paid = !!(a.mp || {})[curMk];
-                      return (<div key={a.id} style={{ padding: "8px 12px", borderBottom: "1px solid " + grayBlue, display: "flex", justifyContent: "space-between", alignItems: "center", background: white }}>
-                        <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}{a.reg > 0 ? <span style={{ fontSize: 10, color: copper, marginLeft: 4 }}>{"🎁" + a.reg}</span> : null}</span>
-                        <span style={{ fontSize: 11, fontFamily: ft, color: paid ? "#5a6a2a" : "#991b1b", fontWeight: 600 }}>{paid ? "✓ pagó" : "✗ debe"}</span>
+                      var alComms = comentariosData.filter(function (c) { return c.alumno_id === a.id });
+                      var isSel = selAlEnc === a.id;
+                      return (<div key={a.id}>
+                        <div onClick={function () { setSelAlEnc(isSel ? null : a.id) }} style={{ padding: "8px 12px", borderBottom: "1px solid " + grayBlue, display: "flex", justifyContent: "space-between", alignItems: "center", background: isSel ? "#fdf6ec" : white, cursor: "pointer" }}>
+                          <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}{a.reg > 0 ? <span style={{ fontSize: 10, color: copper, marginLeft: 4 }}>{"🎁" + a.reg}</span> : null}{alComms.length > 0 ? <span style={{ fontSize: 10, color: "#991b1b", marginLeft: 4, fontWeight: 700 }}>{"💬" + alComms.length}</span> : null}</span>
+                          <span style={{ fontSize: 11, fontFamily: ft, color: paid ? "#5a6a2a" : "#991b1b", fontWeight: 600 }}>{paid ? "✓ pagó" : "✗ debe"}</span>
+                        </div>
+                        {isSel && alComms.length > 0 ? (
+                          <div style={{ padding: "10px 14px", background: "#faf7f2", borderBottom: "1px solid " + grayBlue }}>
+                            <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: navy, fontFamily: ft }}>{"Comentarios de profes:"}</p>
+                            {alComms.map(function (c) {
+                              var d = new Date(c.created_at);
+                              return (<div key={c.id} style={{ padding: "8px 10px", marginBottom: 4, background: white, borderRadius: 6, border: "1px solid " + grayBlue }}>
+                                <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft, lineHeight: 1.4 }}>{c.comentario}</p>
+                                <p style={{ margin: "3px 0 0", fontSize: 10, color: grayWarm, fontFamily: ft }}>{c.profe_nombre + " · " + d.getDate() + "/" + (d.getMonth() + 1) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0")}</p>
+                              </div>)
+                            })}
+                          </div>
+                        ) : null}
                       </div>)
                     })}
                   </div>
                 </div>)
             })}
-          </div>
-        ) : null}
+          </div>);
+        })() : null}
 
         {subTab === "pagos" ? (
           <div>
