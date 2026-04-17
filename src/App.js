@@ -56,7 +56,7 @@ function allClassesForAlumno(al, month, year) {
   return c1;
 }
 
-function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
+function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/\d{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
 function classesInMonth(day, time, month, year) {
   var tgt = DAYS.indexOf(day); var res = []; var d = new Date(year, month, 1);
   while (d.getMonth() === month) { var dow = d.getDay(); var idx = dow === 0 ? 6 : dow - 1; if (idx === tgt) { var cl = new Date(d); var pp = time.split(":"); cl.setHours(parseInt(pp[0]), parseInt(pp[1]), 0, 0); res.push(cl) } d.setDate(d.getDate() + 1) } return res
@@ -211,7 +211,7 @@ function AdminChat(props) {
   useEffect(function () { if (ref.current) ref.current.scrollIntoView({ behavior: "smooth" }) }, [msgs]);
 
   function findA(name) { var low = name.toLowerCase().trim(); return als.findIndex(function (a) { return a.nombre.toLowerCase().includes(low) }) }
-  function parseSede(t) { var m = t.match(/(si|san*isidro)/i); if (m) return "San Isidro"; var mp = t.match(/P/); if (mp) return "Palermo"; return null; }
+  function parseSede(t) { var m = t.match(/(si|san\s*isidro)/i); if (m) return "San Isidro"; var mp = t.match(/P/); if (mp) return "Palermo"; return null; }
   function filterBySede(list, sede) { if (!sede) return list; return list.filter(function (a) { return a.sede === sede }) }
 
   async function respond(txt) {
@@ -237,13 +237,13 @@ function AdminChat(props) {
 
     // ALTA PROFE
     if (t.startsWith("alta profe")) {
-      var raw = txt.replace(/alta*profe*:?*/i, "").trim();
+      var raw = txt.replace(/alta\s*profe\s*:?\s*/i, "").trim();
       var parts = raw.split("/").map(function (s) { return s.trim() });
       if (parts.length < 3) return "Formato: Alta profe: Nombre / Sede / día hora, día hora";
       var nom = parts[0]; var sede = parts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
       var horStr = parts.slice(2).join("/");
       var dayFix = { "lunes": "lunes", "martes": "martes", "miercoles": "miércoles", "miércoles": "miércoles", "jueves": "jueves", "viernes": "viernes", "sabado": "sábado", "sábado": "sábado" };
-      var hors = horStr.split(",").map(function (h) { var m = h.trim().toLowerCase().match(/([a-záéíóúñü]+)+({1,2}:{2})/); if (!m) return null; var dayNorm = dayFix[m[1]]; if (!dayNorm) return null; return dayNorm + "-" + m[2] }).filter(Boolean);
+      var hors = horStr.split(",").map(function (h) { var m = h.trim().toLowerCase().match(/([a-záéíóúñü]+)\s+(\d{1,2}:\d{2})/); if (!m) return null; var dayNorm = dayFix[m[1]]; if (!dayNorm) return null; return dayNorm + "-" + m[2] }).filter(Boolean);
       if (!hors.length) return "No entendí los horarios. Ej: martes 14:30, jueves 18:30";
       var newPwP = genPw("prof");
       var res = await supa("profesoras", "POST", "", { nombre: nom, sedes: [sede], horarios: hors, password: newPwP, encargada: false });
@@ -253,7 +253,7 @@ function AdminChat(props) {
 
     // BAJA PROFE
     if (t.startsWith("baja profe")) {
-      var n = txt.replace(/baja*profe*:?*/i, "").trim();
+      var n = txt.replace(/baja\s*profe\s*:?\s*/i, "").trim();
       var idx = profes.findIndex(function (p) { return p.nombre.toLowerCase().includes(n.toLowerCase()) });
       if (idx === -1) return " No encontré esa profesora.";
       var pr = profes[idx];
@@ -305,7 +305,7 @@ function AdminChat(props) {
 
     // RESETEAR PW
     if (t.startsWith("resetear pw") || t.startsWith("resetear contra") || t.startsWith("reset pw")) {
-      var n2 = txt.replace(/resetear*(pw|contra(seña)?)*:?*/i, "").replace(/reset*pw*:?*/i, "").trim();
+      var n2 = txt.replace(/resetear\s*(pw|contra(seña)?)\s*:?\s*/i, "").replace(/reset\s*pw\s*:?\s*/i, "").trim();
       if (!n2) return "Formato: Resetear pw: Nombre";
       var idx2 = findA(n2); if (idx2 === -1) return " No encontré ese nombre.";
       var al2 = als[idx2]; var newPw2 = genPw("eves");
@@ -316,7 +316,7 @@ function AdminChat(props) {
 
     // CONTRASEÑA DE UN ALUMNO
     if (t.startsWith("contraseña") || t.startsWith("pw ")) {
-      var n3 = txt.replace(/^(contraseña|pw)*:?*/i, "").trim();
+      var n3 = txt.replace(/^(contraseña|pw)\s*:?\s*/i, "").trim();
       if (!n3) return "Formato: Contraseña: Nombre";
       var idx3 = findA(n3); if (idx3 === -1) return " No encontré ese nombre.";
       var al3 = als[idx3];
@@ -333,7 +333,7 @@ function AdminChat(props) {
     }
 
     // PAGO MASIVO
-    var masMatch = txt.match(/pagos+([éáíóú]+)+({4})*:*(.+)/i);
+    var masMatch = txt.match(/pagos\s+([\wéáíóú]+)\s+(\d{4})\s*:\s*(.+)/i);
     if (masMatch) {
       var parsed = parseMes(masMatch[1] + " " + masMatch[2]);
       if (!parsed) return "No entendí el mes.";
@@ -390,7 +390,7 @@ function AdminChat(props) {
 
     // BAJA ALUMNO
     if (t.startsWith("baja") && !t.startsWith("baja profe")) {
-      var n5 = txt.replace(/baja*:?*/i, "").trim(); if (!n5) return "Formato: Baja: Nombre";
+      var n5 = txt.replace(/baja\s*:?\s*/i, "").trim(); if (!n5) return "Formato: Baja: Nombre";
       var idx5 = findA(n5); if (idx5 === -1) return " No encontré ese nombre.";
       var al5 = als[idx5];
       await supa("alumnos", "PATCH", "?id=eq." + al5.id, { estado: "baja" });
@@ -401,7 +401,7 @@ function AdminChat(props) {
 
     // CONSULTA
     if (t.startsWith("consulta")) {
-      var n6 = txt.replace(/consulta*:?*/i, "").trim(); if (!n6) return "Formato: Consulta: Nombre";
+      var n6 = txt.replace(/consulta\s*:?\s*/i, "").trim(); if (!n6) return "Formato: Consulta: Nombre";
       var idx6 = findA(n6); if (idx6 === -1) return " No encontré ese nombre."; var a6 = als[idx6];
       var meses4 = Object.keys(a6.mp || {});
       var r4 = " " + a6.nombre + " " + a6.sede + " · " + a6.turno.dia + " " + a6.turno.hora;
@@ -422,7 +422,7 @@ function AdminChat(props) {
 
     // CLASE REGALO
     if (t.includes("clase a favor") || t.includes("clase regalo")) {
-      var n7 = txt.replace(/clase*(de*)?(regalo|a*favor)*:?*/i, "").trim();
+      var n7 = txt.replace(/clase\s*(de\s*)?(regalo|a\s*favor)\s*:?\s*/i, "").trim();
       if (!n7) return "Formato: Clase a favor: Nombre"; var idx7 = findA(n7); if (idx7 === -1) return " No encontré ese nombre.";
       var al7 = als[idx7];
       await supa("alumnos", "PATCH", "?id=eq." + al7.id, { clase_regalo: (al7.reg || 0) + 1 });
@@ -433,7 +433,7 @@ function AdminChat(props) {
 
     // ACTUALIZAR CUOTA
     if (t.startsWith("cuota") && t.includes(":")) {
-      var cMatch = txt.match(/cuota*:?*(.+)/i);
+      var cMatch = txt.match(/cuota\s*:?\s*(.+)/i);
       if (!cMatch) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
       var cParts = cMatch[1].split("/").map(function (s) { return s.trim() });
       if (cParts.length < 6) return "Formato: cuota: Sede / 1x|2x / forma_pago / hasta7 / 8a14 / desde15";
@@ -458,14 +458,14 @@ function AdminChat(props) {
       var parts2 = txt.split("/").map(function (s) { return s.trim() });
       if (parts2.length < 3) return "Formato: Nombre / Sede / día hora";
       var nom3, tel2 = "", email2 = "", sedePart, turnoPart;
-      if (parts2.length >= 5) { nom3 = parts2[0].replace(/alta*(de*)?alumno*:?*/i, "").trim(); tel2 = parts2[1]; email2 = parts2[2]; sedePart = parts2[3]; turnoPart = parts2[4] }
+      if (parts2.length >= 5) { nom3 = parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i, "").trim(); tel2 = parts2[1]; email2 = parts2[2]; sedePart = parts2[3]; turnoPart = parts2[4] }
       else if (parts2.length === 4) {
-        nom3 = parts2[0].replace(/alta*(de*)?alumno*:?*/i, "").trim();
+        nom3 = parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i, "").trim();
         if (parts2[1].toLowerCase().includes("palermo") || parts2[1].toLowerCase().includes("isidro")) { sedePart = parts2[1]; turnoPart = parts2[2] + " " + parts2[3] }
         else { tel2 = parts2[1]; sedePart = parts2[2]; turnoPart = parts2[3] }
-      } else { nom3 = parts2[0].replace(/alta*(de*)?alumno*:?*/i, "").trim(); sedePart = parts2[1]; turnoPart = parts2[2] }
+      } else { nom3 = parts2[0].replace(/alta\s*(de\s*)?alumno\s*:?\s*/i, "").trim(); sedePart = parts2[1]; turnoPart = parts2[2] }
       var sede2 = sedePart.toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
-      var tm = normDay(turnoPart.toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)+({1,2}:{2})/);
+      var tm = normDay(turnoPart.toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!tm) return "No entendí el turno. Ej: martes 14:30"; var sk = tm[1] + "-" + tm[2];
       if (SCHED[sede2].indexOf(sk) === -1) return " No existe ese horario en " + sede2 + ".Disponibles: " + SCHED[sede2].map(function (s) { return s.replace("-", " ") }).join(", ");
       var newPw = genPw("eves");
@@ -476,7 +476,7 @@ function AdminChat(props) {
 
     // PAGO INDIVIDUAL
     if (t.includes("pago")) {
-      var match = txt.match(/pago*(recibido|confirmado|ok)*:?*(.+)/i);
+      var match = txt.match(/pago\s*(recibido|confirmado|ok)\s*:?\s*(.+)/i);
       if (!match) return "Formato: Pago recibido: Nombre (marzo 2026)";
       var rest = match[2].trim(); var mesM = rest.match(/\(([^)]+)\)/);
       if (!mesM) return "Incluí el mes entre paréntesis.";
@@ -512,7 +512,7 @@ function AdminChat(props) {
 
     // FRECUENCIA (cambiar alumna a 2x)
     if (t.startsWith("frecuencia") || t.startsWith("freq")) {
-      var fMatch = txt.match(/(?:frecuencia|freq)*:?*(.+?)*[\/\-]*(1x|2x)/i);
+      var fMatch = txt.match(/(?:frecuencia|freq)\s*:?\s*(.+?)\s*[\/\-]\s*(1x|2x)/i);
       if (!fMatch) return "Formato: frecuencia: Nombre / 2x";
       var fName = fMatch[1].trim(); var fVal = fMatch[2];
       var fIdx = findA(fName); if (fIdx === -1) return " No encontré ese nombre.";
@@ -526,7 +526,7 @@ function AdminChat(props) {
 
     // ABRIR HORARIO
     if (t.startsWith("abrir horario") || t.startsWith("abrir")) {
-      var ahMatch = txt.match(/abrir*(?:horario)?*:?*(.+)/i);
+      var ahMatch = txt.match(/abrir\s*(?:horario)?\s*:?\s*(.+)/i);
       if (!ahMatch) return "Formato: abrir horario: viernes 18:30 / Palermo / 4 cupos (marzo 2026)";
       var ahRest = ahMatch[1];
       var ahMes = ahRest.match(/\(([^)]+)\)/);
@@ -535,11 +535,11 @@ function AdminChat(props) {
       var ahClean = ahRest.replace(/\([^)]+\)/, "");
       var ahParts = ahClean.split("/").map(function (s) { return s.trim() });
       if (ahParts.length < 2) return "Formato: abrir horario: viernes 18:30 / Palermo / 4 cupos (marzo 2026)";
-      var ahTurno = normDay(ahParts[0].toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)+({1,2}:{2})/);
+      var ahTurno = normDay(ahParts[0].toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!ahTurno) return "No entendí el horario. Ej: viernes 18:30";
       var ahSede = ahParts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
       var ahCupos = 8;
-      if (ahParts[2]) { var cm2 = ahParts[2].match(/(+)/); if (cm2) ahCupos = parseInt(cm2[1]) }
+      if (ahParts[2]) { var cm2 = ahParts[2].match(/(\d+)/); if (cm2) ahCupos = parseInt(cm2[1]) }
       var ahDia = ahTurno[1]; var ahHora = ahTurno[2];
       // Check if already exists
       var ahExisting = horariosExtra.find(function (h) { return h.sede === ahSede && h.dia === ahDia && h.hora === ahHora && h.mes_key === ahParsed.key });
@@ -554,7 +554,7 @@ function AdminChat(props) {
 
     // CERRAR HORARIO
     if (t.startsWith("cerrar horario") || t.startsWith("cerrar")) {
-      var chMatch = txt.match(/cerrar*(?:horario)?*:?*(.+)/i);
+      var chMatch = txt.match(/cerrar\s*(?:horario)?\s*:?\s*(.+)/i);
       if (!chMatch) return "Formato: cerrar horario: viernes 18:30 / Palermo (marzo 2026)";
       var chRest = chMatch[1];
       var chMes = chRest.match(/\(([^)]+)\)/);
@@ -563,7 +563,7 @@ function AdminChat(props) {
       var chClean = chRest.replace(/\([^)]+\)/, "");
       var chParts = chClean.split("/").map(function (s) { return s.trim() });
       if (chParts.length < 2) return "Formato: cerrar horario: viernes 18:30 / Palermo (marzo 2026)";
-      var chTurno = normDay(chParts[0].toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)+({1,2}:{2})/);
+      var chTurno = normDay(chParts[0].toLowerCase()).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!chTurno) return "No entendí el horario.";
       var chSede = chParts[1].toLowerCase().includes("palermo") ? "Palermo" : "San Isidro";
       var chDia = chTurno[1]; var chHora = chTurno[2];
@@ -592,16 +592,16 @@ function AdminChat(props) {
 
     // CANCELAR CLASES (admin cancela un día entero para todos  feriado o suspensión)
     if (t.startsWith("cancelar clases")) {
-      var cdMatch = txt.match(/cancelar*clases*:?*(.+)/i);
+      var cdMatch = txt.match(/cancelar\s*clases\s*:?\s*(.+)/i);
       if (!cdMatch) return "Formato: cancelar clases: 24 marzo (cancela ese día para todos los alumnos que tienen clase)";
       var cdRest = cdMatch[1].trim().toLowerCase();
       var cdDate = null;
-      var cdSlash = cdRest.match(/({1,2})*[\/\-]*({1,2})(?:*[\/\-]*({4}))?/);
+      var cdSlash = cdRest.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}))?/);
       if (cdSlash) {
         var cdY = cdSlash[3] ? parseInt(cdSlash[3]) : new Date().getFullYear();
         cdDate = new Date(cdY, parseInt(cdSlash[2]) - 1, parseInt(cdSlash[1]));
       } else {
-        var cdWord = cdRest.match(/({1,2})+(+)(?:+({4}))?/);
+        var cdWord = cdRest.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/);
         if (cdWord) {
           var cdMi = MN.findIndex(function (m) { return cdWord[2].includes(m.substring(0, 3)) });
           if (cdMi === -1) return "No entendí la fecha.";
@@ -656,7 +656,7 @@ function AdminChat(props) {
 
     // CANCELAR CLASE (admin cancela por alumno individual)
     if (t.startsWith("cancelar clase")) {
-      var ccMatch = txt.match(/cancelar*clase*:?*(.+)/i);
+      var ccMatch = txt.match(/cancelar\s*clase\s*:?\s*(.+)/i);
       if (!ccMatch) return "Formato: cancelar clase: Nombre / fecha (ej: cancelar clase: Victoria / 6 marzo)";
       var ccParts = ccMatch[1].split("/").map(function (s) { return s.trim() });
       if (ccParts.length < 2) return "Formato: cancelar clase: Nombre / fecha (ej: cancelar clase: Victoria / 6 marzo)";
@@ -665,12 +665,12 @@ function AdminChat(props) {
       // Parse date: "6 marzo" or "6 marzo 2026" or "6/3" or "6/3/2026"
       var ccDateStr = ccParts[1].toLowerCase();
       var ccDate = null;
-      var ccSlashMatch = ccDateStr.match(/({1,2})*[\/\-]*({1,2})(?:*[\/\-]*({4}))?/);
+      var ccSlashMatch = ccDateStr.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}))?/);
       if (ccSlashMatch) {
         var ccY = ccSlashMatch[3] ? parseInt(ccSlashMatch[3]) : new Date().getFullYear();
         ccDate = new Date(ccY, parseInt(ccSlashMatch[2]) - 1, parseInt(ccSlashMatch[1]));
       } else {
-        var ccWordMatch = ccDateStr.match(/({1,2})+(+)(?:+({4}))?/);
+        var ccWordMatch = ccDateStr.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/);
         if (ccWordMatch) {
           var ccMi = MN.findIndex(function (m) { return ccWordMatch[2].includes(m.substring(0, 3)) });
           if (ccMi === -1) return "No entendí la fecha.";
@@ -713,7 +713,7 @@ function AdminChat(props) {
 
     // AGENDAR CLASE (admin agenda recuperación por alumno)
     if (t.startsWith("agendar clase") || t.startsWith("agendar")) {
-      var agMatch = txt.match(/agendar*(?:clase)?*:?*(.+)/i);
+      var agMatch = txt.match(/agendar\s*(?:clase)?\s*:?\s*(.+)/i);
       if (!agMatch) return "Formato: agendar clase: Nombre / día hora fecha (ej: agendar: Victoria / viernes 18:30 7 marzo)";
       var agParts = agMatch[1].split("/").map(function (s) { return s.trim() });
       if (agParts.length < 2) return "Formato: agendar clase: Nombre / viernes 18:30 7 marzo";
@@ -721,18 +721,18 @@ function AdminChat(props) {
       var agAl = als[agIdx];
       // Parse: "viernes 18:30 7 marzo" or "viernes 18:30 7/3"
       var agSlotStr = agParts[1].toLowerCase();
-      var agTurno = normDay(agSlotStr).match(/(lunes|martes|miércoles|jueves|viernes|sábado)+({1,2}:{2})/);
+      var agTurno = normDay(agSlotStr).match(/(lunes|martes|miércoles|jueves|viernes|sábado)\s+(\d{1,2}:\d{2})/);
       if (!agTurno) return "No entendí el horario. Ej: viernes 18:30 7 marzo";
       var agDia = agTurno[1]; var agHora = agTurno[2];
       // Parse date part (after the time)
       var agDatePart = agSlotStr.substring(agTurno[0].length).trim();
       var agDate = null;
-      var agSlashD = agDatePart.match(/({1,2})*[\/\-]*({1,2})(?:*[\/\-]*({4}))?/);
+      var agSlashD = agDatePart.match(/(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}))?/);
       if (agSlashD) {
         var agY = agSlashD[3] ? parseInt(agSlashD[3]) : new Date().getFullYear();
         agDate = new Date(agY, parseInt(agSlashD[2]) - 1, parseInt(agSlashD[1]));
       } else {
-        var agWordD = agDatePart.match(/({1,2})+(+)(?:+({4}))?/);
+        var agWordD = agDatePart.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/);
         if (agWordD) {
           var agMi = MN.findIndex(function (m) { return agWordD[2].includes(m.substring(0, 3)) });
           if (agMi === -1) return "No entendí la fecha.";
