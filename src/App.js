@@ -610,7 +610,7 @@ function EncargadaVista(props) {
   var subTab = subTabOverride === "finanzas" ? "finanzas" : subTabInt;
   var _selDate = useState(null), selDate = _selDate[0], setSelDate = _selDate[1];
   var _selSlot = useState(null), selSlot = _selSlot[0], setSelSlot = _selSlot[1];
-  var _selAlEnc = useState(null), selAlEnc = _selAlEnc[0], setSelAlEnc = _selAlEnc[1];
+
   var _calMonth = useState({ m: month, y: year }), calM = _calMonth[0], setCalM = _calMonth[1];
   var _busyId = useState(null), busyId = _busyId[0], setBusyId = _busyId[1];
 
@@ -702,7 +702,7 @@ function EncargadaVista(props) {
       {subTabOverride !== "finanzas" ? (
         <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
           <button onClick={function () { setSubTab("cal"); setSelSlot(null) }} style={subBtnStyle(subTab === "cal")}>Calendario</button>
-          <button onClick={function () { setSubTab("alumnos") }} style={subBtnStyle(subTab === "alumnos")}>Alumnos</button>
+
           <button onClick={function () { setSubTab("pagos") }} style={subBtnStyle(subTab === "pagos")}>Pagos</button>
         </div>
       ) : null}
@@ -744,34 +744,6 @@ function EncargadaVista(props) {
               </div>)
             })() : null}
             {!selDate ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 13, textAlign: "center", marginTop: 8 }}>Tocá un día para ver las clases</p> : null}
-          </div>
-        ) : null}
-
-        {subTab === "alumnos" ? (
-          <div>
-            <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"Alumnos — " + sede}</h3>
-            <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sedeAls.length + " activo" + (sedeAls.length !== 1 ? "s" : "")}</p>
-            {sched.map(function (slot) {
-              var parts = slot.split("-"); var dia = parts[0], hora = parts[1];
-              var slotAls = sedeAls.filter(function (a) { return (a.turno.dia === dia && a.turno.hora === hora) || (a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora) });
-              if (!slotAls.length) return null;
-              return (<div key={slot} style={{ marginBottom: 14 }}>
-                <div style={{ padding: "8px 12px", background: "#f8f6f2", borderRadius: "8px 8px 0 0", border: "1px solid " + grayBlue, borderBottom: "none" }}>
-                  <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>{dia + " " + hora}</span>
-                  <span style={{ fontSize: 12, color: grayWarm, fontFamily: ft, marginLeft: 8 }}>{"(" + slotAls.length + ")"}</span></div>
-                <div style={{ border: "1px solid " + grayBlue, borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
-                  {slotAls.map(function (a) {
-                    var paid = !!(a.mp || {})[curMk];
-                    return (<div key={a.id} style={{ padding: "10px 12px", borderBottom: "1px solid " + grayBlue, display: "flex", justifyContent: "space-between", alignItems: "center", background: white }}>
-                      <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 11, fontFamily: ft, color: paid ? "#5a6a2a" : "#991b1b", fontWeight: 600 }}>{paid ? "✓ pagó" : "✗ debe"}</span>
-                        <button onClick={function () { if (window.confirm("¿Dar de baja a " + a.nombre + "?")) { supa("alumnos", "PATCH", "?id=eq." + a.id, { estado: "baja" }).then(function () { return supa("historial", "POST", "", { alumno_id: a.id, accion: "⛔ Baja (enc: " + profe.nombre + ")" }) }).then(function () { refreshData() }) } }} style={{ padding: "3px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#991b1b", cursor: "pointer", fontSize: 10, fontFamily: ft, fontWeight: 700 }}>Baja</button>
-                      </div>
-                    </div>)
-                  })}
-                </div></div>)
-            })}
           </div>
         ) : null}
 
