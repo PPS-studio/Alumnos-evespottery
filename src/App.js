@@ -540,6 +540,11 @@ function ProfeLista(props) {
   var _msg = useState(""), msg = _msg[0], setMsg = _msg[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
   var _notes = useState({}), notes = _notes[0], setNotes = _notes[1];
+  var _expanded = useState(null), expanded = _expanded[0], setExpanded = _expanded[1];
+  var _existingNotas = useState([]), existingNotas = _existingNotas[0], setExistingNotas = _existingNotas[1];
+
+  useEffect(function () { supa("notas_pago", "GET", "?order=created_at.desc&limit=100").then(function (r) { if (r) setExistingNotas(r) }) }, []);
+  function getNotasFor(alId) { return existingNotas.filter(function (n) { return n.alumno_id === alId }) }
 
   var now = new Date(); var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   var limit = new Date(now); limit.setDate(limit.getDate() + 7);
@@ -601,21 +606,18 @@ function ProfeLista(props) {
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 16 }}>{fmtDate(sel.date)}</h3>
       <p style={{ margin: "0 0 16px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sel.alumnos.length + " esperado" + (sel.alumnos.length !== 1 ? "s" : "")}</p>
-      {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; return (<div key={id} style={{ marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: v !== undefined ? "10px 10px 0 0" : 10, border: "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}>
-          <span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span></span>
+      {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; var isExp = expanded === id; var alNotas = getNotasFor(id); return (<div key={id} style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: isExp ? "10px 10px 0 0" : 10, border: "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}>
+          <span onClick={function () { setExpanded(isExp ? null : id) }} style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500, cursor: "pointer", flex: 1 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span>{alNotas.length > 0 || notes[id] ? <span style={{ color: copper, fontSize: 11, marginLeft: 4 }}>📝</span> : null}</span>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button>
             <button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button>
           </div>
         </div>
-        {v !== undefined ? (
-          <div style={{ border: "1px solid " + (notes[id] ? copper : grayBlue), borderTop: "none", borderRadius: "0 0 10px 10px", background: "#fafaf7", padding: "8px 12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: copper, fontFamily: ft }}>📝</span>
-              <span style={{ fontSize: 11, color: grayWarm, fontFamily: ft }}>Nota (pagos, comentarios...)</span>
-            </div>
-            <textarea value={notes[id] || ""} onChange={function (e) { setNote(id, e.target.value) }} placeholder="Ej: pagó $95.000 efectivo, llegó tarde, trajo material..." rows={2} style={{ width: "100%", padding: "8px 10px", border: "1px solid " + grayBlue, borderRadius: 6, fontSize: 13, fontFamily: ft, outline: "none", background: white, boxSizing: "border-box", resize: "vertical" }} />
+        {isExp ? (
+          <div style={{ border: "1px solid " + copper, borderTop: "none", borderRadius: "0 0 10px 10px", background: "#faf7f2", padding: "12px 14px" }}>
+            {alNotas.length > 0 ? (<div style={{ marginBottom: 10 }}><p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: navy, fontFamily: ft }}>Notas anteriores:</p>{alNotas.slice(0, 3).map(function (n) { var d = new Date(n.created_at); return (<div key={n.id} style={{ padding: "6px 10px", marginBottom: 4, background: n.verificado ? "#f0f5e8" : white, borderRadius: 6, border: "1px solid " + (n.verificado ? "#b5c48a" : grayBlue), fontSize: 12, fontFamily: ft, color: navy }}>{n.nota + (n.monto ? " — " + fmtMoney(n.monto) : "") + " · " + n.profe_nombre + " " + d.getDate() + "/" + (d.getMonth() + 1)}{n.verificado ? <span style={{ color: "#5a6a2a", marginLeft: 6 }}>✓</span> : <span style={{ color: "#f59e0b", marginLeft: 6 }}>pendiente</span>}</div>) })}</div>) : null}
+            <textarea value={notes[id] || ""} onChange={function (e) { setNote(id, e.target.value) }} placeholder="Ej: pagó $95.000 efectivo, todo ok, debe clase anterior..." rows={2} style={{ width: "100%", padding: "8px 10px", border: "1px solid " + grayBlue, borderRadius: 6, fontSize: 13, fontFamily: ft, outline: "none", background: white, boxSizing: "border-box", resize: "vertical" }} />
           </div>
         ) : null}
       </div>) })}
