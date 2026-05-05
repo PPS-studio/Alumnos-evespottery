@@ -479,68 +479,15 @@ function ProfeView(props) {
       <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
         {!isEncargada ? <button onClick={function () { setTab("clases") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "clases" ? white : cream, color: tab === "clases" ? navy : grayWarm, borderBottom: tab === "clases" ? "2px solid " + copper : "2px solid transparent" }}>Mis clases</button> : null}
         <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>Lista</button>
-        {!isEncargada ? <button onClick={function () { setTab("alumnos") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "alumnos" ? white : cream, color: tab === "alumnos" ? navy : grayWarm, borderBottom: tab === "alumnos" ? "2px solid " + copper : "2px solid transparent" }}>Alumnos</button> : null}
         {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>Sede</button> : null}
         {isEncargada ? <button onClick={function () { setTab("finanzas") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "finanzas" ? white : cream, color: tab === "finanzas" ? navy : grayWarm, borderBottom: tab === "finanzas" ? "2px solid " + copper : "2px solid transparent" }}>Finanzas</button> : null}
       </div>
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
         {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
-        {tab === "alumnos" && !isEncargada ? <ProfeAlumnos profe={profe} als={als} refreshData={refreshData} /> : null}
         {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
         {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
       </div></div>);
-}
-
-function ProfeAlumnos(props) {
-  var profe = props.profe, als = props.als, refreshData = props.refreshData;
-  var _selAl = useState(null), selAl = _selAl[0], setSelAl = _selAl[1];
-  var _nota = useState(""), nota = _nota[0], setNota = _nota[1];
-  var _monto = useState(""), monto = _monto[0], setMonto = _monto[1];
-  var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
-  var _notas = useState([]), notas = _notas[0], setNotas = _notas[1];
-  var profeAls = als.filter(function (a) { if (a.sede !== profe.sede) return false; return profe.horarios.some(function (h) { var parts = h.split("-"); return (a.turno.dia === parts[0] && a.turno.hora === parts[1]) || (a.turno2 && a.turno2.dia === parts[0] && a.turno2.hora === parts[1]) }) });
-  useEffect(function () { supa("notas_pago", "GET", "?order=created_at.desc&limit=50").then(function (r) { if (r) setNotas(r) }) }, [als]);
-  async function enviarNota() {
-    if (!selAl || !nota.trim() || busy) return; setBusy(true);
-    await supa("notas_pago", "POST", "", { alumno_id: selAl.id, profe_nombre: profe.nombre, nota: nota.trim(), monto: monto ? parseFloat(monto) : null, forma_pago: "efectivo" });
-    setNota(""); setMonto(""); setBusy(false); setSelAl(null);
-    var r = await supa("notas_pago", "GET", "?order=created_at.desc&limit=50"); if (r) setNotas(r);
-  }
-  function getNotasFor(alId) { return notas.filter(function (n) { return n.alumno_id === alId }) }
-  return (
-    <div style={{ padding: 20 }}>
-      <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>Mis alumnos</h3>
-      <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 12, fontFamily: ft }}>Tocá un alumno para dejar una nota de pago</p>
-      {profe.horarios.map(function (h) {
-        var parts = h.split("-"); var dia = parts[0], hora = parts[1];
-        var slotAls = profeAls.filter(function (a) { return (a.turno.dia === dia && a.turno.hora === hora) || (a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora) });
-        if (!slotAls.length) return null;
-        return (<div key={h} style={{ marginBottom: 14 }}>
-          <div style={{ padding: "8px 12px", background: "#f8f6f2", borderRadius: "8px 8px 0 0", border: "1px solid " + grayBlue, borderBottom: "none" }}>
-            <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>{dia + " " + hora}</span>
-            <span style={{ fontSize: 12, color: grayWarm, fontFamily: ft, marginLeft: 8 }}>{"(" + slotAls.length + ")"}</span></div>
-          <div style={{ border: "1px solid " + grayBlue, borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
-            {slotAls.map(function (a) {
-              var isSel = selAl && selAl.id === a.id;
-              var alNotas = getNotasFor(a.id);
-              return (<div key={a.id}>
-                <div onClick={function () { setSelAl(isSel ? null : a); setNota(""); setMonto("") }} style={{ padding: "10px 12px", borderBottom: "1px solid " + grayBlue, background: isSel ? "#fdf6ec" : white, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}</span>
-                  {alNotas.length > 0 ? <span style={{ fontSize: 10, color: copper, fontFamily: ft, fontWeight: 700 }}>{"📝 " + alNotas.length}</span> : null}
-                </div>
-                {isSel ? (
-                  <div style={{ padding: "12px 14px", background: "#faf7f2", borderBottom: "1px solid " + grayBlue }}>
-                    {alNotas.length > 0 ? (<div style={{ marginBottom: 10 }}>{alNotas.slice(0, 3).map(function (n) { var d = new Date(n.created_at); return (<div key={n.id} style={{ padding: "6px 10px", marginBottom: 4, background: n.verificado ? "#f0f5e8" : white, borderRadius: 6, border: "1px solid " + (n.verificado ? "#b5c48a" : grayBlue), fontSize: 12, fontFamily: ft, color: navy }}>{n.nota + (n.monto ? " — " + fmtMoney(n.monto) : "") + " · " + n.profe_nombre + " " + d.getDate() + "/" + (d.getMonth() + 1)}{n.verificado ? <span style={{ color: "#5a6a2a", marginLeft: 6 }}>✓</span> : <span style={{ color: "#f59e0b", marginLeft: 6 }}>pendiente</span>}</div>) })}</div>) : null}
-                    <input value={nota} onChange={function (e) { setNota(e.target.value) }} placeholder="Nota (ej: pagó $95000 efectivo)" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 6 }} />
-                    <input type="number" value={monto} onChange={function (e) { setMonto(e.target.value) }} placeholder="Monto (opcional)" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
-                    <button onClick={enviarNota} disabled={!nota.trim() || busy} style={{ width: "100%", padding: "8px", borderRadius: 6, border: "none", background: nota.trim() ? copper : cream, color: nota.trim() ? white : grayWarm, fontFamily: ft, fontWeight: 700, fontSize: 13, cursor: nota.trim() ? "pointer" : "default" }}>{busy ? "Enviando..." : "Enviar nota"}</button>
-                  </div>
-                ) : null}
-              </div>)
-            })}
-          </div></div>)
-      })}</div>);
 }
 
 function ProfeClases(props) {
@@ -654,7 +601,24 @@ function ProfeLista(props) {
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 16 }}>{fmtDate(sel.date)}</h3>
       <p style={{ margin: "0 0 16px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sel.alumnos.length + " esperado" + (sel.alumnos.length !== 1 ? "s" : "")}</p>
-      {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; return (<div key={id} style={{ marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: v !== undefined && notes[id] ? "10px 10px 0 0" : 10, border: "1px solid " + grayBlue, borderBottom: v !== undefined ? "1px solid " + grayBlue : "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}><span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span></span><div style={{ display: "flex", gap: 6 }}><button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button><button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button></div></div>{v !== undefined ? <input value={notes[id] || ""} onChange={function (e) { setNote(id, e.target.value) }} placeholder="Nota (ej: pagó $95000, llegó tarde...)" style={{ width: "100%", padding: "8px 14px", border: "1px solid " + grayBlue, borderTop: "none", borderRadius: "0 0 10px 10px", fontSize: 12, fontFamily: ft, outline: "none", background: "#fafaf7", boxSizing: "border-box" }} /> : null}</div>) })}
+      {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; return (<div key={id} style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: v !== undefined ? "10px 10px 0 0" : 10, border: "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}>
+          <span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span></span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button>
+            <button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button>
+          </div>
+        </div>
+        {v !== undefined ? (
+          <div style={{ border: "1px solid " + (notes[id] ? copper : grayBlue), borderTop: "none", borderRadius: "0 0 10px 10px", background: "#fafaf7", padding: "8px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: copper, fontFamily: ft }}>📝</span>
+              <span style={{ fontSize: 11, color: grayWarm, fontFamily: ft }}>Nota (pagos, comentarios...)</span>
+            </div>
+            <textarea value={notes[id] || ""} onChange={function (e) { setNote(id, e.target.value) }} placeholder="Ej: pagó $95.000 efectivo, llegó tarde, trajo material..." rows={2} style={{ width: "100%", padding: "8px 10px", border: "1px solid " + grayBlue, borderRadius: 6, fontSize: 13, fontFamily: ft, outline: "none", background: white, boxSizing: "border-box", resize: "vertical" }} />
+          </div>
+        ) : null}
+      </div>) })}
       {extras.map(function (al) { var id = al.id; var v = marks[id]; return (<div key={id} style={{ marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, border: "1px solid #e8d4b0", background: "#fdf6ec" }}><span style={{ fontFamily: ft, fontSize: 14, color: copper, fontWeight: 500 }}>{al.nombre} <span style={{ fontSize: 12 }}>(extra)</span></span><div style={{ display: "flex", gap: 6 }}><button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button><button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button></div></div></div>) })}
       <div style={{ marginTop: 12, marginBottom: 12 }}>
         <input value={search} onChange={function (e) { setSearch(e.target.value) }} placeholder="Buscar alumno extra..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, outline: "none", background: cream, boxSizing: "border-box" }} />
