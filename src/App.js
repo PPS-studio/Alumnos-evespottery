@@ -592,6 +592,7 @@ function ProfeLista(props) {
   var _done = useState(false), done = _done[0], setDone = _done[1];
   var _msg = useState(""), msg = _msg[0], setMsg = _msg[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
+  var _notes = useState({}), notes = _notes[0], setNotes = _notes[1];
 
   var now = new Date(); var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   var limit = new Date(now); limit.setDate(limit.getDate() + 7);
@@ -605,8 +606,9 @@ function ProfeLista(props) {
   });
   clases.sort(function (a, b) { return a.date - b.date });
 
-  function selectClass(c) { setSel(c); setMarks({}); setExtras([]); setDone(false); setMsg(""); setSearch("") }
+  function selectClass(c) { setSel(c); setMarks({}); setExtras([]); setDone(false); setMsg(""); setSearch(""); setNotes({}) }
   function toggleMark(id, val) { setMarks(function (p) { var o = Object.assign({}, p); o[id] = val; return o }) }
+  function setNote(id, txt) { setNotes(function (p) { var o = Object.assign({}, p); o[id] = txt; return o }) }
   function addExtra(al) { if (extras.find(function (e) { return e.id === al.id })) return; setExtras(function (p) { return p.concat(al) }); setMarks(function (p) { var o = Object.assign({}, p); o[al.id] = true; return o }); setSearch("") }
   function canSubmit() { if (!sel) return false; var allIds = sel.alumnos.map(function (a) { return a.alumno.id }).concat(extras.map(function (e) { return e.id })); return allIds.every(function (id) { return marks[id] === true || marks[id] === false }) }
 
@@ -616,10 +618,22 @@ function ProfeLista(props) {
     for (var ai = 0; ai < sel.alumnos.length; ai++) { var a = sel.alumnos[ai]; if (marks[a.alumno.id] === false) { faltasSinAviso.push(a.alumno); var mk = sel.date.getFullYear() + "-" + sel.date.getMonth(); await supa("cancelaciones", "POST", "", { alumno_id: a.alumno.id, fecha_iso: sel.iso, mes_key: mk, sin_recuperacion: true, sin_aviso: true, is_extra: a.tipo === "recuperacion" }); await supa("historial", "POST", "", { alumno_id: a.alumno.id, accion: "⛔ Falta sin aviso " + fmtDateShort(sel.date) }) } else presentes.push(a.alumno) }
     for (var ei = 0; ei < extras.length; ei++) { var al = extras[ei]; if (marks[al.id] === true) { clasesExtra.push(al); var mk2 = sel.date.getFullYear() + "-" + sel.date.getMonth(); await supa("clases_extra", "POST", "", { alumno_id: al.id, fecha_iso: sel.iso, mes_key: mk2, tipo: "extra" }); await supa("historial", "POST", "", { alumno_id: al.id, accion: "📝 Clase extra " + fmtDateShort(sel.date) }) } }
     await supa("listas", "POST", "", { profe: profe.nombre, sede: profe.sede, dia: sel.dia, hora: sel.hora, fecha_iso: sel.iso });
+    // Save payment notes
+    var notasSaved = [];
+    var allAlIds = sel.alumnos.map(function (a) { return a.alumno }).concat(extras);
+    for (var ni = 0; ni < allAlIds.length; ni++) {
+      var alNota = allAlIds[ni]; var noteTxt = notes[alNota.id];
+      if (noteTxt && noteTxt.trim()) {
+        var montoMatch = noteTxt.match(/\$?\s*(\d[\d.,]*)/); var montoVal = montoMatch ? parseFloat(montoMatch[1].replace(/\./g, "").replace(",", ".")) : null;
+        await supa("notas_pago", "POST", "", { alumno_id: alNota.id, profe_nombre: profe.nombre, nota: noteTxt.trim(), monto: montoVal, forma_pago: "efectivo" });
+        notasSaved.push(alNota.nombre);
+      }
+    }
     await refreshData(); setBusy(false);
     var m2 = "✦ Lista enviada\nPresentes: " + presentes.length + (clasesExtra.length ? " + " + clasesExtra.length + " extra" : "");
     if (faltasSinAviso.length) m2 += "\nFaltas sin aviso: " + faltasSinAviso.map(function (a) { return a.nombre }).join(", ");
     if (clasesExtra.length) m2 += "\nClase extra: " + clasesExtra.map(function (a) { return a.nombre }).join(", ");
+    if (notasSaved.length) m2 += "\n📝 Notas guardadas: " + notasSaved.join(", ");
     setMsg(m2); setDone(true);
   }
 
@@ -640,8 +654,8 @@ function ProfeLista(props) {
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 16 }}>{fmtDate(sel.date)}</h3>
       <p style={{ margin: "0 0 16px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sel.alumnos.length + " esperado" + (sel.alumnos.length !== 1 ? "s" : "")}</p>
-      {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; return (<div key={id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 6, borderRadius: 10, border: "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}><span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span></span><div style={{ display: "flex", gap: 6 }}><button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button><button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button></div></div>) })}
-      {extras.map(function (al) { var id = al.id; var v = marks[id]; return (<div key={id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 6, borderRadius: 10, border: "1px solid #e8d4b0", background: "#fdf6ec" }}><span style={{ fontFamily: ft, fontSize: 14, color: copper, fontWeight: 500 }}>{al.nombre} <span style={{ fontSize: 12 }}>(extra)</span></span><div style={{ display: "flex", gap: 6 }}><button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button><button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button></div></div>) })}
+      {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; return (<div key={id} style={{ marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: v !== undefined && notes[id] ? "10px 10px 0 0" : 10, border: "1px solid " + grayBlue, borderBottom: v !== undefined ? "1px solid " + grayBlue : "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}><span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span></span><div style={{ display: "flex", gap: 6 }}><button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button><button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button></div></div>{v !== undefined ? <input value={notes[id] || ""} onChange={function (e) { setNote(id, e.target.value) }} placeholder="Nota (ej: pagó $95000, llegó tarde...)" style={{ width: "100%", padding: "8px 14px", border: "1px solid " + grayBlue, borderTop: "none", borderRadius: "0 0 10px 10px", fontSize: 12, fontFamily: ft, outline: "none", background: "#fafaf7", boxSizing: "border-box" }} /> : null}</div>) })}
+      {extras.map(function (al) { var id = al.id; var v = marks[id]; return (<div key={id} style={{ marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, border: "1px solid #e8d4b0", background: "#fdf6ec" }}><span style={{ fontFamily: ft, fontSize: 14, color: copper, fontWeight: 500 }}>{al.nombre} <span style={{ fontSize: 12 }}>(extra)</span></span><div style={{ display: "flex", gap: 6 }}><button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button><button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button></div></div></div>) })}
       <div style={{ marginTop: 12, marginBottom: 12 }}>
         <input value={search} onChange={function (e) { setSearch(e.target.value) }} placeholder="Buscar alumno extra..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, outline: "none", background: cream, boxSizing: "border-box" }} />
         {searchResults.map(function (a) { return (<button key={a.id} onClick={function () { addExtra(a) }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", marginTop: 4, borderRadius: 8, border: "1px solid #e8d4b0", background: "#fdf6ec", cursor: "pointer", fontFamily: ft, fontSize: 13, color: copper }}>{"+ " + a.nombre}</button>) })}</div>
