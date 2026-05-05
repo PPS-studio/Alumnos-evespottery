@@ -24,7 +24,7 @@ var ft = "'Barlow Semi Condensed',sans-serif";
 var ADMIN_PW = "Clases2026";
 var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "miércoles-18:30", "jueves-18:30", "sábado-10:00"],
-  "Palermo": ["lunes-18:30", "martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
+  "Palermo": ["lunes-18:30", "martes-10:00", "martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
 };
 var MAX_CUPO = 8; var CLASES_BASE = 4;
 var DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
@@ -211,8 +211,16 @@ function AdminChat(props) {
 
     if (t.startsWith("notificacion") || t.startsWith("notif")) {
       var notifs = await supa("admin_notifs", "GET", "?order=created_at.desc&limit=20");
-      if (notifs && notifs.length) { return "Notificaciones:\n" + notifs.map(function (n) { return "[" + n.tipo + "] " + n.nombre + (n.sede ? " (" + n.sede + ")" : "") + (n.turno ? " " + n.turno : "") }).join("\n") }
-      return "Sin notificaciones pendientes.";
+      var notasPend = await supa("notas_pago", "GET", "?verificado=eq.false&order=created_at.desc");
+      var r = "";
+      if (notasPend && notasPend.length) {
+        r += "📝 Notas de pago sin verificar (" + notasPend.length + "):\n";
+        notasPend.forEach(function (n) { var al = als.find(function (a) { return a.id === n.alumno_id }); r += "• " + (al ? al.nombre : "?") + " — " + n.nota + (n.monto ? " " + fmtMoney(n.monto) : "") + " (por " + n.profe_nombre + ")\n" });
+        r += "\n";
+      }
+      if (notifs && notifs.length) { r += "🔔 Otras notificaciones:\n" + notifs.map(function (n) { return "[" + n.tipo + "] " + n.nombre + (n.sede ? " (" + n.sede + ")" : "") + (n.turno ? " " + n.turno : "") }).join("\n") }
+      if (!r) return "Sin notificaciones pendientes.";
+      return r;
     }
     if (t.includes("ver profe") || t === "profes") {
       if (!profes.length) return "No hay profes cargadas.";
@@ -478,18 +486,32 @@ function ProfeView(props) {
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
         {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
-        {tab === "alumnos" && !isEncargada ? <ProfeAlumnos profe={profe} als={als} /> : null}
+        {tab === "alumnos" && !isEncargada ? <ProfeAlumnos profe={profe} als={als} refreshData={refreshData} /> : null}
         {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
         {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
       </div></div>);
 }
 
 function ProfeAlumnos(props) {
-  var profe = props.profe, als = props.als;
+  var profe = props.profe, als = props.als, refreshData = props.refreshData;
+  var _selAl = useState(null), selAl = _selAl[0], setSelAl = _selAl[1];
+  var _nota = useState(""), nota = _nota[0], setNota = _nota[1];
+  var _monto = useState(""), monto = _monto[0], setMonto = _monto[1];
+  var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
+  var _notas = useState([]), notas = _notas[0], setNotas = _notas[1];
   var profeAls = als.filter(function (a) { if (a.sede !== profe.sede) return false; return profe.horarios.some(function (h) { var parts = h.split("-"); return (a.turno.dia === parts[0] && a.turno.hora === parts[1]) || (a.turno2 && a.turno2.dia === parts[0] && a.turno2.hora === parts[1]) }) });
+  useEffect(function () { supa("notas_pago", "GET", "?order=created_at.desc&limit=50").then(function (r) { if (r) setNotas(r) }) }, [als]);
+  async function enviarNota() {
+    if (!selAl || !nota.trim() || busy) return; setBusy(true);
+    await supa("notas_pago", "POST", "", { alumno_id: selAl.id, profe_nombre: profe.nombre, nota: nota.trim(), monto: monto ? parseFloat(monto) : null, forma_pago: "efectivo" });
+    setNota(""); setMonto(""); setBusy(false); setSelAl(null);
+    var r = await supa("notas_pago", "GET", "?order=created_at.desc&limit=50"); if (r) setNotas(r);
+  }
+  function getNotasFor(alId) { return notas.filter(function (n) { return n.alumno_id === alId }) }
   return (
     <div style={{ padding: 20 }}>
-      <h3 style={{ margin: "0 0 14px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>Mis alumnos</h3>
+      <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>Mis alumnos</h3>
+      <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 12, fontFamily: ft }}>Tocá un alumno para dejar una nota de pago</p>
       {profe.horarios.map(function (h) {
         var parts = h.split("-"); var dia = parts[0], hora = parts[1];
         var slotAls = profeAls.filter(function (a) { return (a.turno.dia === dia && a.turno.hora === hora) || (a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora) });
@@ -499,7 +521,24 @@ function ProfeAlumnos(props) {
             <span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 13 }}>{dia + " " + hora}</span>
             <span style={{ fontSize: 12, color: grayWarm, fontFamily: ft, marginLeft: 8 }}>{"(" + slotAls.length + ")"}</span></div>
           <div style={{ border: "1px solid " + grayBlue, borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
-            {slotAls.map(function (a) { return <div key={a.id} style={{ padding: "10px 12px", borderBottom: "1px solid " + grayBlue, background: white }}><span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}</span></div> })}
+            {slotAls.map(function (a) {
+              var isSel = selAl && selAl.id === a.id;
+              var alNotas = getNotasFor(a.id);
+              return (<div key={a.id}>
+                <div onClick={function () { setSelAl(isSel ? null : a); setNota(""); setMonto("") }} style={{ padding: "10px 12px", borderBottom: "1px solid " + grayBlue, background: isSel ? "#fdf6ec" : white, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontFamily: ft, fontSize: 13, color: navy }}>{a.nombre}</span>
+                  {alNotas.length > 0 ? <span style={{ fontSize: 10, color: copper, fontFamily: ft, fontWeight: 700 }}>{"📝 " + alNotas.length}</span> : null}
+                </div>
+                {isSel ? (
+                  <div style={{ padding: "12px 14px", background: "#faf7f2", borderBottom: "1px solid " + grayBlue }}>
+                    {alNotas.length > 0 ? (<div style={{ marginBottom: 10 }}>{alNotas.slice(0, 3).map(function (n) { var d = new Date(n.created_at); return (<div key={n.id} style={{ padding: "6px 10px", marginBottom: 4, background: n.verificado ? "#f0f5e8" : white, borderRadius: 6, border: "1px solid " + (n.verificado ? "#b5c48a" : grayBlue), fontSize: 12, fontFamily: ft, color: navy }}>{n.nota + (n.monto ? " — " + fmtMoney(n.monto) : "") + " · " + n.profe_nombre + " " + d.getDate() + "/" + (d.getMonth() + 1)}{n.verificado ? <span style={{ color: "#5a6a2a", marginLeft: 6 }}>✓</span> : <span style={{ color: "#f59e0b", marginLeft: 6 }}>pendiente</span>}</div>) })}</div>) : null}
+                    <input value={nota} onChange={function (e) { setNota(e.target.value) }} placeholder="Nota (ej: pagó $95000 efectivo)" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 6 }} />
+                    <input type="number" value={monto} onChange={function (e) { setMonto(e.target.value) }} placeholder="Monto (opcional)" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + grayBlue, fontSize: 13, fontFamily: ft, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+                    <button onClick={enviarNota} disabled={!nota.trim() || busy} style={{ width: "100%", padding: "8px", borderRadius: 6, border: "none", background: nota.trim() ? copper : cream, color: nota.trim() ? white : grayWarm, fontFamily: ft, fontWeight: 700, fontSize: 13, cursor: nota.trim() ? "pointer" : "default" }}>{busy ? "Enviando..." : "Enviar nota"}</button>
+                  </div>
+                ) : null}
+              </div>)
+            })}
           </div></div>)
       })}</div>);
 }
@@ -508,11 +547,22 @@ function ProfeClases(props) {
   var profe = props.profe, als = props.als;
   var now = new Date(); var limit = new Date(now); limit.setDate(limit.getDate() + 7);
   var clases = [];
+  // Production hours (only for specific profes, not real classes)
+  var PRODUCCION = { "Vero": ["martes-16:30", "jueves-16:30"] };
+  var profeProduccion = PRODUCCION[profe.nombre] || [];
   profe.horarios.forEach(function (h) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
     for (var dd = new Date(now); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
       var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
-      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); if (dt > now) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); var fijos = countFijosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.length, fijos: fijos, feriado: isFeriado(dt) }) } }
+      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); if (dt > now) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); var fijos = countFijosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.length, fijos: fijos, feriado: isFeriado(dt), produccion: false }) } }
+    }
+  });
+  // Add production hours
+  profeProduccion.forEach(function (h) {
+    var parts = h.split("-"); var dia = parts[0], hora = parts[1];
+    for (var dd = new Date(now); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
+      var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
+      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); if (dt > now && !isFeriado(dt)) { clases.push({ date: dt, dia: dia, hora: hora, alumnos: 0, fijos: 0, feriado: false, produccion: true }) } }
     }
   });
   clases.sort(function (a, b) { return a.date - b.date });
@@ -523,6 +573,7 @@ function ProfeClases(props) {
       {clases.length === 0 ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 14 }}>No tenés clases próximas.</p> :
         clases.map(function (c, i) {
           if (c.feriado) return (<div key={i} style={{ marginBottom: 12, borderRadius: 12, border: "1px solid #e8d4b0", overflow: "hidden" }}><div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", background: "#fdf6ec" }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{fmtDate(c.date)}</span><span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft, fontWeight: 700 }}>FERIADO</span></div><div style={{ padding: "10px 16px", background: "#fdf6ec" }}><p style={{ margin: 0, fontSize: 13, fontFamily: ft, color: "#92651e" }}>FERIADO — el taller permanece cerrado</p></div></div>);
+          if (c.produccion) return (<div key={i} style={{ marginBottom: 12, borderRadius: 12, border: "1px solid #c4b5d4", overflow: "hidden" }}><div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", background: "#f5f0fa" }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{fmtDate(c.date)}</span><span style={{ fontSize: 11, background: "#8b5cf6", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft, fontWeight: 700 }}>PRODUCCIÓN</span></div><div style={{ padding: "10px 16px", background: "#f5f0fa" }}><p style={{ margin: 0, fontSize: 13, fontFamily: ft, color: "#6b5080", lineHeight: 1.5 }}>Horario de producción / trabajo de taller</p></div></div>);
           var msgText, msgBg, msgBorder, msgColor;
           if (isSI) { msgText = "¡Que disfrutes mucho de la clase! Por favor, no te olvides de tomar lista."; msgBg = "#f0f5e8"; msgBorder = "#b5c48a"; msgColor = "#5a6a2a"; }
           else if (c.fijos === 0) { msgText = "No hay alumnos en este horario, recuerda hacer producción."; msgBg = "#f5f0fa"; msgBorder = "#c4b5d4"; msgColor = "#6b5080"; }
@@ -613,6 +664,7 @@ function EncargadaVista(props) {
 
   var _calMonth = useState({ m: month, y: year }), calM = _calMonth[0], setCalM = _calMonth[1];
   var _busyId = useState(null), busyId = _busyId[0], setBusyId = _busyId[1];
+  var _notasPago = useState([]), notasPago = _notasPago[0], setNotasPago = _notasPago[1];
 
   var sched = SCHED[sede] || [];
   var sedeAls = als.filter(function (a) { return a.sede === sede });
@@ -660,6 +712,7 @@ function EncargadaVista(props) {
     var mk = now.getFullYear() + "-" + now.getMonth();
     supa("movimientos", "GET", "?sede=eq." + encodeURIComponent(sede) + "&mes_key=eq." + mk + "&order=created_at.desc").then(function (r) { if (r) setMovs(r) });
     supa("meses_pagados", "GET", "?order=created_at.desc").then(function (r) { if (r) setPagosData(r) });
+    supa("notas_pago", "GET", "?order=created_at.desc&limit=50").then(function (r) { if (r) setNotasPago(r) });
   }, [als]);
 
   var finMk = now.getFullYear() + "-" + now.getMonth();
@@ -704,6 +757,7 @@ function EncargadaVista(props) {
           <button onClick={function () { setSubTab("cal"); setSelSlot(null) }} style={subBtnStyle(subTab === "cal")}>Calendario</button>
 
           <button onClick={function () { setSubTab("pagos") }} style={subBtnStyle(subTab === "pagos")}>Pagos</button>
+          <button onClick={function () { setSubTab("notas") }} style={subBtnStyle(subTab === "notas")}>Notas</button>
         </div>
       ) : null}
       <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
@@ -775,6 +829,48 @@ function EncargadaVista(props) {
           </div>
         ) : null}
 
+        {subTab === "notas" ? (
+          <div>
+            <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"Notas de pago — " + sede}</h3>
+            <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 12, fontFamily: ft }}>Notas dejadas por las profesoras. Marcá en verde cuando verifiques el pago.</p>
+            {notasPago.filter(function (n) { var al = sedeAls.find(function (a) { return a.id === n.alumno_id }); return !!al }).length === 0 ? <p style={{ color: grayWarm, fontFamily: ft, fontSize: 14 }}>No hay notas pendientes.</p> : null}
+            {notasPago.filter(function (n) { return !n.verificado && sedeAls.find(function (a) { return a.id === n.alumno_id }) }).length > 0 ? (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ padding: "10px 14px", background: "#fdf6ec", borderRadius: "10px 10px 0 0", border: "1px solid #e8d4b0" }}><span style={{ fontWeight: 700, color: copper, fontFamily: ft, fontSize: 14 }}>{"Pendientes de verificar"}</span></div>
+                <div style={{ border: "1px solid #e8d4b0", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                  {notasPago.filter(function (n) { return !n.verificado && sedeAls.find(function (a) { return a.id === n.alumno_id }) }).map(function (n) {
+                    var al = sedeAls.find(function (a) { return a.id === n.alumno_id });
+                    var d = new Date(n.created_at);
+                    return (<div key={n.id} style={{ padding: "12px 14px", borderBottom: "1px solid #e8d4b0", background: white, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy, fontWeight: 600 }}>{al ? al.nombre : "?"}</p>
+                        <p style={{ margin: "2px 0 0", fontFamily: ft, fontSize: 12, color: grayWarm }}>{n.nota + (n.monto ? " — " + fmtMoney(n.monto) : "")}</p>
+                        <p style={{ margin: "2px 0 0", fontFamily: ft, fontSize: 11, color: grayWarm }}>{n.profe_nombre + " · " + d.getDate() + "/" + (d.getMonth() + 1)}</p>
+                      </div>
+                      <button disabled={busyId === "ver" + n.id} onClick={function () { setBusyId("ver" + n.id); supa("notas_pago", "PATCH", "?id=eq." + n.id, { verificado: true, verificado_por: profe.nombre, verificado_at: new Date().toISOString() }).then(function () { return supa("notas_pago", "GET", "?order=created_at.desc&limit=50") }).then(function (r) { if (r) setNotasPago(r); setBusyId(null) }) }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #b5c48a", background: "#f0f5e8", color: "#5a6a2a", cursor: "pointer", fontFamily: ft, fontSize: 12, fontWeight: 700 }}>{"✓ Verificar"}</button>
+                    </div>)
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {notasPago.filter(function (n) { return n.verificado && sedeAls.find(function (a) { return a.id === n.alumno_id }) }).length > 0 ? (
+              <div>
+                <div style={{ padding: "10px 14px", background: "#f0f5e8", borderRadius: "10px 10px 0 0", border: "1px solid #b5c48a" }}><span style={{ fontWeight: 700, color: "#5a6a2a", fontFamily: ft, fontSize: 14 }}>{"Verificados"}</span></div>
+                <div style={{ border: "1px solid #b5c48a", borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                  {notasPago.filter(function (n) { return n.verificado && sedeAls.find(function (a) { return a.id === n.alumno_id }) }).map(function (n) {
+                    var al = sedeAls.find(function (a) { return a.id === n.alumno_id });
+                    var d = new Date(n.created_at);
+                    return (<div key={n.id} style={{ padding: "10px 14px", borderBottom: "1px solid #b5c48a", background: white }}>
+                      <p style={{ margin: 0, fontFamily: ft, fontSize: 13, color: navy }}>{(al ? al.nombre : "?") + " — " + n.nota + (n.monto ? " " + fmtMoney(n.monto) : "")}</p>
+                      <p style={{ margin: "2px 0 0", fontFamily: ft, fontSize: 11, color: "#5a6a2a" }}>{"✓ " + (n.verificado_por || "") + " · " + d.getDate() + "/" + (d.getMonth() + 1)}</p>
+                    </div>)
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {subTab === "finanzas" ? (
           <div>
             <h3 style={{ margin: "0 0 12px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 17 }}>{"Finanzas " + MN[month] + " — " + sede}</h3>
@@ -823,7 +919,13 @@ function AlumnoCal(props) {
   var now = new Date(); var curMk = now.getFullYear() + "-" + now.getMonth();
   var paidCurrent = !!(al.mp || {})[curMk];
   var cuotaInfo = getCuotaInfo(cuotas, al.sede, al.frecuencia || "1x");
+  // Next month visible from day 20
+  var showNextMonth = now.getDate() >= 20;
+  var nxtDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  var nxtMk = nxtDate.getFullYear() + "-" + nxtDate.getMonth();
+  var paidNext = !!(al.mp || {})[nxtMk];
   var all = [];
+  // Current month classes (always shown)
   var curClasses = allClassesForAlumno(al, now.getMonth(), now.getFullYear());
   var cm = (al.canc || []).filter(function (c) { return c.mk === curMk });
   curClasses.forEach(function (d) {
@@ -833,8 +935,21 @@ function AlumnoCal(props) {
     if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup });
     else all.push({ date: d, extra: false, feriado: feriado });
   });
+  // Next month classes (from day 20)
+  if (showNextMonth) {
+    var nxtClasses = allClassesForAlumno(al, nxtDate.getMonth(), nxtDate.getFullYear());
+    var nxtCanc = (al.canc || []).filter(function (c) { return c.mk === nxtMk });
+    nxtClasses.forEach(function (d) {
+      var cancelled = nxtCanc.some(function (c) { return c.iso === d.toISOString() });
+      var cancelInfo = nxtCanc.find(function (c) { return c.iso === d.toISOString() });
+      var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false;
+      if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup, nextMonth: true });
+      else all.push({ date: d, extra: false, feriado: feriado, nextMonth: true });
+    });
+  }
+  // Other paid months
   var pm = Object.keys(al.mp || {});
-  pm.forEach(function (mk) { if (mk === curMk) return; var p = mk.split("-").map(Number); var mc = allClassesForAlumno(al, p[1], p[0]); var cmk = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() }); var cancelInfo = cmk.find(function (c) { return c.iso === d.toISOString() }); var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup }); else all.push({ date: d, extra: false, feriado: feriado }) }) });
+  pm.forEach(function (mk) { if (mk === curMk || mk === nxtMk) return; var p = mk.split("-").map(Number); var mc = allClassesForAlumno(al, p[1], p[0]); var cmk = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() }); var cancelInfo = cmk.find(function (c) { return c.iso === d.toISOString() }); var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup }); else all.push({ date: d, extra: false, feriado: feriado }) }) });
   (al.ex || []).forEach(function (e) { all.push({ date: new Date(e.date), extra: true }) });
   all.sort(function (a, b) { return a.date - b.date });
   var statsBlocks = pm.map(function (mk) { var stats = getMonthStats(al, mk); var p = mk.split("-").map(Number); return { label: MN[p[1]] + " " + p[0], stats: stats, mk: mk } });
@@ -850,14 +965,18 @@ function AlumnoCal(props) {
             <div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Transferencia</p><p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.transferencia)}</p></div></div>
           {cuotaInfo.diasRestantes ? (<div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "") + " para pagar este precio"}</p>{cuotaInfo.nextAumento ? <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e", fontFamily: ft }}>{"Después: ef. " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transf. " + fmtMoney(cuotaInfo.nextAumento.transferencia)}</p> : null}</div>) : null}
         </div></div>) : null}
+      {showNextMonth && !paidNext ? (<div style={{ background: "#fdf6ec", borderRadius: 12, padding: 14, border: "1px solid #e8d4b0", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontWeight: 600, color: copper, fontSize: 14, fontFamily: ft }}>{"📅 " + MN[nxtDate.getMonth()] + " — Ya podés ver tus clases del mes que viene"}</p>
+        <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92651e", fontFamily: ft }}>{"Podés cancelar clases, pero para recuperar necesitás tener el pago al día."}</p>
+      </div>) : null}
       {statsBlocks.map(function (sb) { return (<div key={sb.mk} style={{ background: "#f8f6f2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid " + grayBlue }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}><span style={{ fontWeight: 700, color: navy, fontFamily: ft, fontSize: 14 }}>{sb.label}</span><span style={{ fontSize: 12, color: copper, fontFamily: ft, fontWeight: 600 }}>{sb.stats.clasesEfectivas + "/" + CLASES_BASE + " clases"}</span></div>{sb.stats.pendientes > 0 ? <div style={{ background: "#fdf6ec", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: copper, fontFamily: ft, border: "1px solid #e8d4b0" }}>{"🔄 " + sb.stats.pendientes + " pendiente(s)"}</div> : null}</div>) })}
       {al.reg > 0 ? <div style={{ background: "#fdf6ec", border: "1px solid #e8d4b0", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: copper, fontFamily: ft }}>{"🎁 " + al.reg + " clase(s) a favor"}</div> : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {all.map(function (c, i) { var h = hrsUntil(c.date); var past = h < 0; var fer = c.feriado; var canc = c.cancelled;
-          return (<div key={i} style={{ padding: "14px 16px", borderRadius: 10, background: canc ? "#fef2f2" : fer ? "#fdf6ec" : past ? cream : white, border: "1px solid " + (canc ? "#fca5a5" : fer ? "#e8d4b0" : past ? grayBlue : gold), opacity: past && !canc ? 0.45 : 1 }}>
+          return (<div key={i} style={{ padding: "14px 16px", borderRadius: 10, background: canc ? "#fef2f2" : fer ? "#fdf6ec" : past ? cream : c.nextMonth ? "#f8f6f2" : white, border: "1px solid " + (canc ? "#fca5a5" : fer ? "#e8d4b0" : past ? grayBlue : c.nextMonth ? "#e8d4b0" : gold), opacity: past && !canc ? 0.45 : 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 600, color: canc ? "#991b1b" : navy, fontFamily: ft, fontSize: 14, textDecoration: canc ? "line-through" : "none" }}>{fmtDate(c.date)}</span>
-              {canc && fer ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : canc ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>CANCELADA</span> : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}</div>
+              {canc && fer ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : canc ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>CANCELADA</span> : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : c.nextMonth ? <span style={{ fontSize: 11, background: copper, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>{MN[c.date.getMonth()]}</span> : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}</div>
             {canc ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{c.sinRecup ? "No se recupera" : "Podrás recuperarla"}</div> : null}
             {!past && !fer && !canc && h < 24 ? <div style={{ fontSize: 11, color: copper, marginTop: 5, fontFamily: ft }}>{"⚠ Menos de 24h"}</div> : null}
           </div>) })}</div></div>);
@@ -885,9 +1004,19 @@ function AlumnoFlow(props) {
   if (curStats) totalPendientes += curStats.pendientes;
   pm.forEach(function (mk) { if (mk !== curMk) { var s = getMonthStats(al, mk); totalPendientes += s.pendientes } });
 
+  // Next month visible from day 20
+  var showNextMonth = now.getDate() >= 20;
+  var paidNext = !!(al.mp || {})[nxtMk];
+
   function getUp() {
     var cls = [];
     pm.forEach(function (mk) { var p = mk.split("-").map(Number); var mc = allClassesForAlumno(al, p[1], p[0]); var cm2 = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { if (hrsUntil(d) > 0 && !cm2.some(function (c) { return c.iso === d.toISOString() })) cls.push({ date: d, mk: mk, tot: mc.length }) }) });
+    // Next month classes (for cancelling, from day 20)
+    if (showNextMonth) {
+      var nxtClasses = allClassesForAlumno(al, nd.getMonth(), nd.getFullYear());
+      var nxtCanc = (al.canc || []).filter(function (c) { return c.mk === nxtMk });
+      nxtClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !nxtCanc.some(function (c) { return c.iso === d.toISOString() })) cls.push({ date: d, mk: nxtMk, tot: nxtClasses.length, nextMonth: true }) });
+    }
     (al.ex || []).forEach(function (e) { var d = new Date(e.date); if (hrsUntil(d) > 0) { var wasCancelled = (al.canc || []).some(function (c) { return c.iso === e.date && c.isExtra }); if (!wasCancelled) cls.push({ date: d, mk: e.mk, isExtra: true }) } });
     return cls.sort(function (a, b) { return a.date - b.date })
   }
