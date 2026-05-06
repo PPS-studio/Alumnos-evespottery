@@ -558,7 +558,7 @@ function ProfeLista(props) {
   });
   clases.sort(function (a, b) { return a.date - b.date });
 
-  function selectClass(c) { setSel(c); setMarks({}); setExtras([]); setDone(false); setMsg(""); setSearch(""); setNotes({}) }
+  function selectClass(c) { setSel(c); setMarks({}); setExtras([]); setDone(false); setMsg(""); setSearch(""); setNotes({}); setExpanded(null) }
   function toggleMark(id, val) { setMarks(function (p) { var o = Object.assign({}, p); o[id] = val; return o }) }
   function setNote(id, txt) { setNotes(function (p) { var o = Object.assign({}, p); o[id] = txt; return o }) }
   function addExtra(al) { if (extras.find(function (e) { return e.id === al.id })) return; setExtras(function (p) { return p.concat(al) }); setMarks(function (p) { var o = Object.assign({}, p); o[al.id] = true; return o }); setSearch("") }
