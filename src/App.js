@@ -607,8 +607,11 @@ function ProfeLista(props) {
       <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 16 }}>{fmtDate(sel.date)}</h3>
       <p style={{ margin: "0 0 16px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sel.alumnos.length + " esperado" + (sel.alumnos.length !== 1 ? "s" : "")}</p>
       {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; var isExp = expanded === id; var alNotas = getNotasFor(id); return (<div key={id} style={{ marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: isExp ? "10px 10px 0 0" : 10, border: "1px solid " + grayBlue, background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}>
-          <span onClick={function () { setExpanded(isExp ? null : id) }} style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500, cursor: "pointer", flex: 1 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span>{alNotas.length > 0 || notes[id] ? <span style={{ color: copper, fontSize: 11, marginLeft: 4 }}>📝</span> : null}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: isExp ? "10px 10px 0 0" : 10, border: "1px solid " + (isExp ? copper : grayBlue), background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+            <button onClick={function () { setExpanded(isExp ? null : id) }} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid " + (isExp ? copper : "#e8d4b0"), background: isExp ? "#fdf6ec" : "#faf7f2", cursor: "pointer", fontSize: 12, fontFamily: ft, color: copper, fontWeight: 700 }}>📝</button>
+            <span style={{ fontFamily: ft, fontSize: 14, color: navy, fontWeight: 500 }}>{a.alumno.nombre}<span style={{ color: grayWarm, fontSize: 12 }}>{a.tipo === "recuperacion" ? " (recup)" : ""}</span>{alNotas.length > 0 ? <span style={{ color: copper, fontSize: 10, marginLeft: 4 }}>{alNotas.length}</span> : null}</span>
+          </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={function () { toggleMark(id, true) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === true ? "2px solid #5a6a2a" : "1px solid " + grayBlue, background: v === true ? "#5a6a2a" : white, color: v === true ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✓</button>
             <button onClick={function () { toggleMark(id, false) }} style={{ width: 36, height: 36, borderRadius: 8, border: v === false ? "2px solid #991b1b" : "1px solid " + grayBlue, background: v === false ? "#991b1b" : white, color: v === false ? white : navy, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✗</button>
@@ -927,12 +930,29 @@ function AlumnoCal(props) {
       else all.push({ date: d, extra: false, feriado: feriado, nextMonth: true });
     });
   }
-  // Other paid months
+  // Other paid months - only show if they have pending recoveries
   var pm = Object.keys(al.mp || {});
-  pm.forEach(function (mk) { if (mk === curMk || mk === nxtMk) return; var p = mk.split("-").map(Number); var mc = allClassesForAlumno(al, p[1], p[0]); var cmk = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() }); var cancelInfo = cmk.find(function (c) { return c.iso === d.toISOString() }); var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup }); else all.push({ date: d, extra: false, feriado: feriado }) }) });
+  pm.forEach(function (mk) {
+    if (mk === curMk || mk === nxtMk) return;
+    var p = mk.split("-").map(Number);
+    var pastMonth = new Date(p[0], p[1] + 1, 0) < now; // last day of that month < now
+    if (pastMonth) {
+      // Only include if there are pending recoveries
+      var stats = getMonthStats(al, mk);
+      if (stats.pendientes === 0) return; // skip - nothing pending
+    }
+    var mc = allClassesForAlumno(al, p[1], p[0]); var cmk = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() }); var cancelInfo = cmk.find(function (c) { return c.iso === d.toISOString() }); var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup }); else all.push({ date: d, extra: false, feriado: feriado }) })
+  });
   (al.ex || []).forEach(function (e) { all.push({ date: new Date(e.date), extra: true }) });
   all.sort(function (a, b) { return a.date - b.date });
-  var statsBlocks = pm.map(function (mk) { var stats = getMonthStats(al, mk); var p = mk.split("-").map(Number); return { label: MN[p[1]] + " " + p[0], stats: stats, mk: mk } });
+  // Only show stats for current/future months or past months with pendientes
+  var statsBlocks = pm.filter(function (mk) {
+    if (mk === curMk) return true;
+    var p = mk.split("-").map(Number);
+    var pastMonth = new Date(p[0], p[1] + 1, 0) < now;
+    if (pastMonth) { var stats = getMonthStats(al, mk); return stats.pendientes > 0 }
+    return true;
+  }).map(function (mk) { var stats = getMonthStats(al, mk); var p = mk.split("-").map(Number); return { label: MN[p[1]] + " " + p[0], stats: stats, mk: mk } });
   return (
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 2px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Tus clases</h3>
@@ -1015,8 +1035,21 @@ function AlumnoFlow(props) {
 
   async function doCanc(ci) {
     setBusy(true);
-    if (ci.isExtra) { await supa("clases_extra", "DELETE", "?alumno_id=eq." + al.id + "&fecha_iso=eq." + encodeURIComponent(ci.date.toISOString())); await supa("historial", "POST", "", { alumno_id: al.id, accion: "❌ Canceló recup " + fmtDate(ci.date) }); await refreshData(); setBusy(false); setCanRec(true); setCMsg("") }
-    else { var stats = getMonthStats(al, ci.mk); var noR = stats.is5 && stats.cancTotal === 0; await supa("cancelaciones", "POST", "", { alumno_id: al.id, fecha_iso: ci.date.toISOString(), mes_key: ci.mk, sin_recuperacion: noR, sin_aviso: false, is_extra: false }); await supa("historial", "POST", "", { alumno_id: al.id, accion: (noR ? "❌(5ta) " : "❌ ") + fmtDate(ci.date) }); await refreshData(); setBusy(false); if (noR) { setCanRec(false); setCMsg("Esta clase no se puede recuperar (5ta clase). Las 4 restantes sí.") } else { setCanRec(true); setCMsg("") } }
+    if (ci.isExtra) {
+      // Check if it was a regalo - need to restore the counter
+      var extraRows = await supa("clases_extra", "GET", "?alumno_id=eq." + al.id + "&fecha_iso=eq." + encodeURIComponent(ci.date.toISOString()));
+      var wasRegalo = extraRows && extraRows.length > 0 && extraRows[0].tipo === "regalo";
+      await supa("clases_extra", "DELETE", "?alumno_id=eq." + al.id + "&fecha_iso=eq." + encodeURIComponent(ci.date.toISOString()));
+      if (wasRegalo) { await supa("alumnos", "PATCH", "?id=eq." + al.id, { clase_regalo: (al.reg || 0) + 1 }) }
+      await supa("historial", "POST", "", { alumno_id: al.id, accion: "❌ Canceló " + (wasRegalo ? "regalo" : "recup") + " " + fmtDate(ci.date) });
+      await refreshData(); setBusy(false); setCanRec(true); setCMsg("");
+    } else {
+      var stats = getMonthStats(al, ci.mk); var noR = stats.is5 && stats.cancTotal === 0;
+      await supa("cancelaciones", "POST", "", { alumno_id: al.id, fecha_iso: ci.date.toISOString(), mes_key: ci.mk, sin_recuperacion: noR, sin_aviso: false, is_extra: false });
+      await supa("historial", "POST", "", { alumno_id: al.id, accion: (noR ? "❌(5ta) " : "❌ ") + fmtDate(ci.date) });
+      await refreshData(); setBusy(false);
+      if (noR) { setCanRec(false); setCMsg("Esta clase no se puede recuperar (5ta clase). Las 4 restantes sí.") } else { setCanRec(true); setCMsg("") }
+    }
   }
   async function doResc(slot, gift) {
     setBusy(true);
