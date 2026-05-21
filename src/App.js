@@ -718,7 +718,9 @@ function EncargadaVista(props) {
   var ivaAPagar = Math.max(0, ivaDebito - ivaGastos);
 
   async function confirmPay() {
-    if (!payingAl || !payForma || !payMonto) return; setBusyId(payingAl.id);
+    if (!payingAl || !payForma || !payMonto) return;
+    if (!window.confirm("¿Confirmás el pago de " + payingAl.nombre + " por " + fmtMoney(parseFloat(payMonto)) + " en " + payForma + "?")) return;
+    setBusyId(payingAl.id);
     await supa("meses_pagados", "POST", "", { alumno_id: payingAl.id, mes_key: curMk, forma_pago: payForma, monto: parseFloat(payMonto), registrado_por: profe.nombre });
     await supa("historial", "POST", "", { alumno_id: payingAl.id, accion: "💳 " + MN[month] + " " + year + " " + payForma + " " + fmtMoney(parseFloat(payMonto)) + " (enc: " + profe.nombre + ")" });
     await refreshData(); setBusyId(null); setPayingAl(null); setPayForma(""); setPayMonto("");
