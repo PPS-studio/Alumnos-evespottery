@@ -41,7 +41,8 @@ var FERIADOS_2026 = [
   "2026-12-7", "2026-12-8", "2026-12-25"
 ];
 function isFeriado(date) {
-  var k = date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
+  var a = toArg(date);
+  var k = a.getUTCFullYear() + "-" + (a.getUTCMonth() + 1) + "-" + a.getUTCDate();
   return FERIADOS_2026.indexOf(k) !== -1;
 }
 function normDay(s) { return s.replace(/sabado/gi, "sábado").replace(/miercoles/gi, "miércoles") }
@@ -57,8 +58,12 @@ function classesInMonth(day, time, month, year) {
   while (d.getMonth() === month) { var dow = d.getDay(); var idx = dow === 0 ? 6 : dow - 1; if (idx === tgt) { var cl = new Date(d); var pp = time.split(":"); cl.setHours(parseInt(pp[0]), parseInt(pp[1]), 0, 0); res.push(cl) } d.setDate(d.getDate() + 1) } return res
 }
 function hrsUntil(d) { return (d.getTime() - Date.now()) / 3600000 }
-function fmtDate(d) { var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; var mn = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]; return dn[d.getDay()] + " " + d.getDate() + " " + mn[d.getMonth()] + " · " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") }
-function fmtDateShort(d) { var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; return dn[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") }
+// Argentina timezone helpers (UTC-3) — always display/compare in Argentina time
+function toArg(d) { var utcMs = d.getTime() + d.getTimezoneOffset() * 60000; return new Date(utcMs - 3 * 3600000) }
+function dayKey(d) { var a = toArg(typeof d === "string" ? new Date(d) : d); return a.getUTCFullYear() + "-" + String(a.getUTCMonth() + 1).padStart(2, "0") + "-" + String(a.getUTCDate()).padStart(2, "0") }
+function matchDay(iso1, iso2) { if (!iso1 || !iso2) return false; return dayKey(typeof iso1 === "string" ? new Date(iso1) : iso1) === dayKey(typeof iso2 === "string" ? new Date(iso2) : iso2) }
+function fmtDate(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; var mn = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]; return dn[a.getUTCDay()] + " " + a.getUTCDate() + " " + mn[a.getUTCMonth()] + " · " + String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
+function fmtDateShort(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; return dn[a.getUTCDay()] + " " + a.getUTCDate() + "/" + (a.getUTCMonth() + 1) + " " + String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
 function genPw(prefix) { return prefix + String(Math.floor(1000 + Math.random() * 9000)) }
 function fmtMoney(n) { return "$" + Number(n).toLocaleString("es-AR") }
 function getCuotaInfo(cuotas, sede, frecuencia) {
@@ -124,8 +129,8 @@ function getCupoForSlot(allAls, sede, dia, hora, fecha, maxCupo) {
     if (a.sede !== sede) return;
     var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
     var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
-    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) fijos++ }
-    (a.ex || []).forEach(function (e) { if (e.date === dateStr) recups++ })
+    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) fijos++ }
+    (a.ex || []).forEach(function (e) { if (matchDay(e.date, dateStr)) recups++ })
   });
   var cap = maxCupo || MAX_CUPO;
   return { ocupado: fijos + recups, libre: cap - fijos - recups };
@@ -136,8 +141,8 @@ function getAlumnosForSlot(allAls, sede, dia, hora, fecha) {
     if (a.sede !== sede) return;
     var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
     var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
-    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }) }
-    (a.ex || []).forEach(function (e) { if (e.date === dateStr && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: "recuperacion" }) })
+    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }) }
+    (a.ex || []).forEach(function (e) { if (matchDay(e.date, dateStr) && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: "recuperacion" }) })
   });
   return result;
 }
@@ -147,7 +152,7 @@ function countFijosForSlot(allAls, sede, dia, hora, fecha) {
     if (a.sede !== sede) return;
     var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
     var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
-    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) count++ }
+    if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) count++ }
   });
   return count;
 }
@@ -306,8 +311,8 @@ function AdminChat(props) {
       else { var dm = t.match(/(lunes|martes|miércoles|jueves|viernes|sábado|domingo)/); if (dm) { var ti = DAYS.indexOf(dm[1]); var ci = td.getDay(); var cx = ci === 0 ? 6 : ci - 1; var diff = ti - cx; if (diff <= 0) diff += 7; td = new Date(); td.setDate(td.getDate() + diff); label = dm[1] } }
       var dow = td.getDay(); var dayN = DAYS[dow === 0 ? 6 : dow - 1]; var mk2 = td.getFullYear() + "-" + td.getMonth();
       var list = [];
-      filterBySede(als, sedeFilter).forEach(function (a) { if (a.turno.dia !== dayN) return; if (!(a.mp || {})[mk2]) return; var dateObj = new Date(td); var pp = a.turno.hora.split(":"); dateObj.setHours(parseInt(pp[0]), parseInt(pp[1]), 0, 0); var cancelled = (a.canc || []).some(function (c) { return c.iso === dateObj.toISOString() }); if (!cancelled) list.push(a) });
-      filterBySede(als, sedeFilter).forEach(function (a) { (a.ex || []).forEach(function (e) { var exD = new Date(e.date); if (exD.toDateString() === td.toDateString() && !list.find(function (x) { return x.id === a.id })) list.push(Object.assign({}, a, { isRec: true })) }) });
+      filterBySede(als, sedeFilter).forEach(function (a) { if (a.turno.dia !== dayN) return; if (!(a.mp || {})[mk2]) return; var dateObj = new Date(td); var pp = a.turno.hora.split(":"); dateObj.setHours(parseInt(pp[0]), parseInt(pp[1]), 0, 0); var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateObj) }); if (!cancelled) list.push(a) });
+      filterBySede(als, sedeFilter).forEach(function (a) { (a.ex || []).forEach(function (e) { var exD = new Date(e.date); if (dayKey(exD) === dayKey(td) && !list.find(function (x) { return x.id === a.id })) list.push(Object.assign({}, a, { isRec: true })) }) });
       if (!list.length) return "No hay alumnos el " + label + " (" + dayN + ")" + sedeLabel;
       list.sort(function (a, b) { return a.turno.hora.localeCompare(b.turno.hora) });
       return label + " (" + dayN + " " + td.getDate() + "/" + (td.getMonth() + 1) + ")" + sedeLabel + ":\n" + list.map(function (a) { return "• " + a.turno.hora + " — " + a.nombre + (a.isRec ? " (recup)" : "") + " (" + a.sede + ")" }).join("\n") + "\nTotal: " + list.length
@@ -553,7 +558,7 @@ function ProfeLista(props) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
     for (var dd = new Date(monthStart); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
       var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
-      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); var iso = dt.toISOString(); var yaTomada = listas.some(function (l) { return l.profe === profe.nombre && l.fecha_iso === iso }); if (!yaTomada && !isFeriado(dt)) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: dt < now }) } }
+      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); var iso = dt.toISOString(); var yaTomada = listas.some(function (l) { return l.profe === profe.nombre && matchDay(l.fecha_iso, iso) }); if (!yaTomada && !isFeriado(dt)) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: dt < now }) } }
     }
   });
   clases.sort(function (a, b) { return a.date - b.date });
@@ -666,7 +671,7 @@ function EncargadaVista(props) {
 
   function getSlotAlumnos(dia, hora, fecha) {
     var dateStr = fecha.toISOString(); var result = [];
-    als.forEach(function (a) { if (a.sede !== sede) return; var matchT1 = a.turno.dia === dia && a.turno.hora === hora; var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora; if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return c.iso === dateStr }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }); else result.push({ alumno: a, tipo: "canceló" }) } (a.ex || []).forEach(function (e) { if (e.date === dateStr && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: e.tipo || "recuperacion" }) }) });
+    als.forEach(function (a) { if (a.sede !== sede) return; var matchT1 = a.turno.dia === dia && a.turno.hora === hora; var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora; if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }); else result.push({ alumno: a, tipo: "canceló" }) } (a.ex || []).forEach(function (e) { if (matchDay(e.date, dateStr) && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: e.tipo || "recuperacion" }) }) });
     return result;
   }
 
@@ -914,8 +919,8 @@ function AlumnoCal(props) {
   var curClasses = allClassesForAlumno(al, now.getMonth(), now.getFullYear());
   var cm = (al.canc || []).filter(function (c) { return c.mk === curMk });
   curClasses.forEach(function (d) {
-    var cancelled = cm.some(function (c) { return c.iso === d.toISOString() });
-    var cancelInfo = cm.find(function (c) { return c.iso === d.toISOString() });
+    var cancelled = cm.some(function (c) { return matchDay(c.iso, d) });
+    var cancelInfo = cm.find(function (c) { return matchDay(c.iso, d) });
     var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false;
     if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup });
     else all.push({ date: d, extra: false, feriado: feriado });
@@ -925,8 +930,8 @@ function AlumnoCal(props) {
     var nxtClasses = allClassesForAlumno(al, nxtDate.getMonth(), nxtDate.getFullYear());
     var nxtCanc = (al.canc || []).filter(function (c) { return c.mk === nxtMk });
     nxtClasses.forEach(function (d) {
-      var cancelled = nxtCanc.some(function (c) { return c.iso === d.toISOString() });
-      var cancelInfo = nxtCanc.find(function (c) { return c.iso === d.toISOString() });
+      var cancelled = nxtCanc.some(function (c) { return matchDay(c.iso, d) });
+      var cancelInfo = nxtCanc.find(function (c) { return matchDay(c.iso, d) });
       var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false;
       if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup, nextMonth: true });
       else all.push({ date: d, extra: false, feriado: feriado, nextMonth: true });
@@ -943,7 +948,7 @@ function AlumnoCal(props) {
       var stats = getMonthStats(al, mk);
       if (stats.pendientes === 0) return; // skip - nothing pending
     }
-    var mc = allClassesForAlumno(al, p[1], p[0]); var cmk = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { var cancelled = cmk.some(function (c) { return c.iso === d.toISOString() }); var cancelInfo = cmk.find(function (c) { return c.iso === d.toISOString() }); var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup }); else all.push({ date: d, extra: false, feriado: feriado }) })
+    var mc = allClassesForAlumno(al, p[1], p[0]); var cmk = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { var cancelled = cmk.some(function (c) { return matchDay(c.iso, d) }); var cancelInfo = cmk.find(function (c) { return matchDay(c.iso, d) }); var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup }); else all.push({ date: d, extra: false, feriado: feriado }) })
   });
   (al.ex || []).forEach(function (e) { all.push({ date: new Date(e.date), extra: true }) });
   all.sort(function (a, b) { return a.date - b.date });
@@ -1012,14 +1017,14 @@ function AlumnoFlow(props) {
 
   function getUp() {
     var cls = [];
-    pm.forEach(function (mk) { var p = mk.split("-").map(Number); var mc = allClassesForAlumno(al, p[1], p[0]); var cm2 = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { if (hrsUntil(d) > 0 && !cm2.some(function (c) { return c.iso === d.toISOString() })) cls.push({ date: d, mk: mk, tot: mc.length }) }) });
+    pm.forEach(function (mk) { var p = mk.split("-").map(Number); var mc = allClassesForAlumno(al, p[1], p[0]); var cm2 = (al.canc || []).filter(function (c) { return c.mk === mk }); mc.forEach(function (d) { if (hrsUntil(d) > 0 && !cm2.some(function (c) { return matchDay(c.iso, d) })) cls.push({ date: d, mk: mk, tot: mc.length }) }) });
     // Next month classes (for cancelling, from day 20)
     if (showNextMonth) {
       var nxtClasses = allClassesForAlumno(al, nd.getMonth(), nd.getFullYear());
       var nxtCanc = (al.canc || []).filter(function (c) { return c.mk === nxtMk });
-      nxtClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !nxtCanc.some(function (c) { return c.iso === d.toISOString() })) cls.push({ date: d, mk: nxtMk, tot: nxtClasses.length, nextMonth: true }) });
+      nxtClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !nxtCanc.some(function (c) { return matchDay(c.iso, d) })) cls.push({ date: d, mk: nxtMk, tot: nxtClasses.length, nextMonth: true }) });
     }
-    (al.ex || []).forEach(function (e) { var d = new Date(e.date); if (hrsUntil(d) > 0) { var wasCancelled = (al.canc || []).some(function (c) { return c.iso === e.date && c.isExtra }); if (!wasCancelled) cls.push({ date: d, mk: e.mk, isExtra: true }) } });
+    (al.ex || []).forEach(function (e) { var d = new Date(e.date); if (hrsUntil(d) > 0) { var wasCancelled = (al.canc || []).some(function (c) { return matchDay(c.iso, e.date) && c.isExtra }); if (!wasCancelled) cls.push({ date: d, mk: e.mk, isExtra: true }) } });
     return cls.sort(function (a, b) { return a.date - b.date })
   }
   function getRM() { var months = [curMk]; if ((al.mp || {})[nxtMk]) months.push(nxtMk); return months }
@@ -1030,18 +1035,19 @@ function AlumnoFlow(props) {
     var closedSet = {}; (horariosExtra || []).forEach(function (h) { if (!h.abierto && h.sede === al.sede) closedSet[h.dia + "-" + h.hora + "-" + h.mes_key] = true });
     sched.forEach(function (key) { var parts = key.split("-"); vm.forEach(function (mk) { var p = mk.split("-").map(Number); if (closedSet[parts[0] + "-" + parts[1] + "-" + mk]) return; classesInMonth(parts[0], parts[1], p[1], p[0]).forEach(function (d) { if (hrsUntil(d) > 0 && !isFeriado(d)) { var cupo = getCupoForSlot(allAls, al.sede, parts[0], parts[1], d); if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: parts[0], hora: parts[1] }) } }) }) });
     (horariosExtra || []).forEach(function (h) { if (!h.abierto || h.sede !== al.sede) return; var schedKey = h.dia + "-" + h.hora; if (sched.indexOf(schedKey) !== -1) return; var mk = h.mes_key; if (vm.indexOf(mk) === -1) return; var p = mk.split("-").map(Number); classesInMonth(h.dia, h.hora, p[1], p[0]).forEach(function (d) { if (hrsUntil(d) > 0 && !isFeriado(d)) { var cupo = getCupoForSlot(allAls, al.sede, h.dia, h.hora, d, h.cupos); if (cupo.libre > 0) alts.push({ date: d, mk: mk, cupoLibre: cupo.libre, dia: h.dia, hora: h.hora }) } }) });
-    var seen = {}; return alts.filter(function (a) { var k = a.date.toISOString(); if (seen[k]) return false; seen[k] = true; return true }).sort(function (a, b) { return a.date - b.date });
+    var seen = {}; return alts.filter(function (a) { var k = dayKey(a.date) + a.hora; if (seen[k]) return false; seen[k] = true; return true }).sort(function (a, b) { return a.date - b.date });
   }
-  function getSlotsForDate(date) { if (!date) return []; return getAllAvailableSlots().filter(function (s) { return s.date.toDateString() === date.toDateString() }) }
-  function getAvailableDates() { var slots = getAllAvailableSlots(); var seen = {}; var dates = []; slots.forEach(function (s) { var k = s.date.toDateString(); if (!seen[k]) { seen[k] = true; dates.push(s.date) } }); return dates }
+  function getSlotsForDate(date) { if (!date) return []; return getAllAvailableSlots().filter(function (s) { return dayKey(s.date) === dayKey(date) }) }
+  function getAvailableDates() { var slots = getAllAvailableSlots(); var seen = {}; var dates = []; slots.forEach(function (s) { var k = dayKey(s.date); if (!seen[k]) { seen[k] = true; dates.push(s.date) } }); return dates }
 
   async function doCanc(ci) {
     setBusy(true);
     if (ci.isExtra) {
       // Check if it was a regalo - need to restore the counter
-      var extraRows = await supa("clases_extra", "GET", "?alumno_id=eq." + al.id + "&fecha_iso=eq." + encodeURIComponent(ci.date.toISOString()));
+      var dk = dayKey(ci.date);
+      var extraRows = await supa("clases_extra", "GET", "?alumno_id=eq." + al.id + "&fecha_iso=gte." + dk + "T00:00:00.000Z&fecha_iso=lte." + dk + "T23:59:59.999Z");
       var wasRegalo = extraRows && extraRows.length > 0 && extraRows[0].tipo === "regalo";
-      await supa("clases_extra", "DELETE", "?alumno_id=eq." + al.id + "&fecha_iso=eq." + encodeURIComponent(ci.date.toISOString()));
+      await supa("clases_extra", "DELETE", "?alumno_id=eq." + al.id + "&fecha_iso=gte." + dk + "T00:00:00.000Z&fecha_iso=lte." + dk + "T23:59:59.999Z");
       if (wasRegalo) { await supa("alumnos", "PATCH", "?id=eq." + al.id, { clase_regalo: (al.reg || 0) + 1 }) }
       await supa("historial", "POST", "", { alumno_id: al.id, accion: "❌ Canceló " + (wasRegalo ? "regalo" : "recup") + " " + fmtDate(ci.date) });
       await refreshData(); setBusy(false); setCanRec(true); setCMsg("");
@@ -1074,7 +1080,7 @@ function AlumnoFlow(props) {
     var upUnpaid = [];
     var curClasses = allClassesForAlumno(al, now.getMonth(), now.getFullYear());
     var curCanc = (al.canc || []).filter(function (c) { return c.mk === curMk });
-    curClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !curCanc.some(function (c) { return c.iso === d.toISOString() })) upUnpaid.push({ date: d, mk: curMk, tot: curClasses.length }) });
+    curClasses.forEach(function (d) { if (hrsUntil(d) > 0 && !curCanc.some(function (c) { return matchDay(c.iso, d) })) upUnpaid.push({ date: d, mk: curMk, tot: curClasses.length }) });
     return (
       <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", height: "100%" }}>
         <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5" }}>
@@ -1270,7 +1276,7 @@ function madTotalClasesDisponibles(al) { var t = 0; madGetBonosActivos(al).forEa
 
 function madGetCupoForSlot(allAls, dia, hora, fecha, tipoReserva) {
   var dateStr = fecha.toISOString(); var torno = 0; var mesa = 0;
-  allAls.forEach(function (a) { (a.bonos || []).forEach(function (b) { (b.clasesAgendadas || []).forEach(function (c) { if (c.iso === dateStr) { if (c.tipo === "torno") torno++; else mesa++ } }) }) });
+  allAls.forEach(function (a) { (a.bonos || []).forEach(function (b) { (b.clasesAgendadas || []).forEach(function (c) { if (matchDay(c.iso, dateStr)) { if (c.tipo === "torno") torno++; else mesa++ } }) }) });
   var totalOcupado = torno + mesa; var libreTotal = MAD_MAX_CUPO - totalOcupado; var libreTorno = MAD_MAX_TORNO - torno;
   return { torno: torno, mesa: mesa, totalOcupado: totalOcupado, libreTotal: libreTotal, libreTorno: libreTorno, puedeReservar: tipoReserva === "torno" ? (libreTorno > 0 && libreTotal > 0) : libreTotal > 0 };
 }
@@ -1620,7 +1626,7 @@ function MadAdminChat(props) {
     if (t.startsWith("baja")) { var n = txt.replace(/baja\s*:?\s*/i, "").trim(); var idx = findA(n); if (idx === -1) return "✗ No encontré."; var al = als[idx]; setAls(function (p) { return p.filter(function (_, i) { return i !== idx }) }); addLog("Baja: " + al.nombre); return "✓ " + al.nombre + " dado de baja." }
     if (t.startsWith("alta")) { var parts = txt.replace(/alta\s*:?\s*/i, "").trim().split("/").map(function (s) { return s.trim() }); if (!parts[0]) return "Formato: Alta: Nombre / tel"; var na = { id: madNextAlId++, nombre: parts[0], tel: parts[1] || "", email: "", pw: null, turnoFijo: null, bonos: [], deuda: 0, hist: ["Alta"] }; setAls(function (p) { return p.concat(na) }); addLog("Alta: " + parts[0]); return "✓ Alta: " + parts[0] }
     if (t.includes("vender bono") || t.startsWith("bono")) { var rest = txt.replace(/vender\s*bono\s*:?\s*/i, "").replace(/^bono\s*:?\s*/i, "").trim(); var bp = rest.split("/").map(function (s) { return s.trim() }); if (bp.length < 2) return "Formato: Vender bono: Nombre / tipo\nTipos: " + Object.keys(MAD_BONOS).join(", "); var idx3 = findA(bp[0]); if (idx3 === -1) return "✗ No encontré."; var tipoKey = bp[1].toLowerCase(); if (!MAD_BONOS[tipoKey]) return "✗ Tipo no válido."; var def = MAD_BONOS[tipoKey]; var hoy = new Date(); var nb = { id: madNextBonoId++, tipoKey: tipoKey, comprado: hoy.toISOString(), vence: madAddMonths(hoy, def.meses).toISOString(), clasesUsadas: [], clasesAgendadas: [], cancelaciones: [] }; setAls(function (p) { var c = p.slice(); c[idx3] = Object.assign({}, c[idx3], { bonos: (c[idx3].bonos || []).concat(nb) }); return c }); addLog("Bono: " + als[idx3].nombre + " — " + def.nombre); return "✓ " + als[idx3].nombre + " — " + def.nombre + " (" + def.precio + "€)" }
-    if (t.includes("alumnos de") || t.includes("alumnos del")) { var td = new Date(); if (t.includes("mañana")) { td.setDate(td.getDate() + 1) } else { var dm = t.match(/(lunes|martes|miércoles|jueves|viernes|sábado|domingo)/); if (dm) { var ti = DAYS.indexOf(dm[1]); var ci = td.getDay(); var cx = ci === 0 ? 6 : ci - 1; var diff = ti - cx; if (diff <= 0) diff += 7; td = new Date(); td.setDate(td.getDate() + diff) } } var list = []; als.forEach(function (a) { (a.bonos || []).forEach(function (b) { (b.clasesAgendadas || []).forEach(function (c) { var cd = new Date(c.iso); if (cd.toDateString() === td.toDateString()) list.push({ nombre: a.nombre, hora: c.hora || "", tipo: c.tipo }) }) }) }); if (!list.length) return "No hay clases ese día."; list.sort(function (a, b) { return (a.hora || "").localeCompare(b.hora || "") }); return "Clases:\n" + list.map(function (c) { return "• " + (c.hora || "?") + " — " + c.nombre + " (" + c.tipo + ")" }).join("\n") }
+    if (t.includes("alumnos de") || t.includes("alumnos del")) { var td = new Date(); if (t.includes("mañana")) { td.setDate(td.getDate() + 1) } else { var dm = t.match(/(lunes|martes|miércoles|jueves|viernes|sábado|domingo)/); if (dm) { var ti = DAYS.indexOf(dm[1]); var ci = td.getDay(); var cx = ci === 0 ? 6 : ci - 1; var diff = ti - cx; if (diff <= 0) diff += 7; td = new Date(); td.setDate(td.getDate() + diff) } } var list = []; als.forEach(function (a) { (a.bonos || []).forEach(function (b) { (b.clasesAgendadas || []).forEach(function (c) { var cd = new Date(c.iso); if (dayKey(cd) === dayKey(td)) list.push({ nombre: a.nombre, hora: c.hora || "", tipo: c.tipo }) }) }) }); if (!list.length) return "No hay clases ese día."; list.sort(function (a, b) { return (a.hora || "").localeCompare(b.hora || "") }); return "Clases:\n" + list.map(function (c) { return "• " + (c.hora || "?") + " — " + c.nombre + " (" + c.tipo + ")" }).join("\n") }
     return "No entendí. Probá: ver alumnos, alta, baja, consulta, vender bono, deudas, pago deuda, alumnos de hoy, historial";
   }
 
