@@ -54,12 +54,21 @@ function allClassesForAlumno(al, month, year) {
 }
 function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/\d{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
 function classesInMonth(day, time, month, year) {
-  var tgt = DAYS.indexOf(day); var res = []; var d = new Date(year, month, 1);
-  while (d.getMonth() === month) { var dow = d.getDay(); var idx = dow === 0 ? 6 : dow - 1; if (idx === tgt) { var cl = new Date(d); var pp = time.split(":"); cl.setHours(parseInt(pp[0]), parseInt(pp[1]), 0, 0); res.push(cl) } d.setDate(d.getDate() + 1) } return res
+  var tgt = DAYS.indexOf(day); var res = [];
+  var daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  for (var dn = 1; dn <= daysInMonth; dn++) {
+    var d = new Date(Date.UTC(year, month, dn, 12, 0));
+    var dow = d.getUTCDay(); var idx = dow === 0 ? 6 : dow - 1;
+    if (idx === tgt) {
+      var pp = time.split(":"); var h = parseInt(pp[0]) + 3; var dy = dn;
+      if (h >= 24) { h -= 24; dy++ }
+      res.push(new Date(Date.UTC(year, month, dy, h, parseInt(pp[1]), 0, 0)))
+    }
+  } return res
 }
 function hrsUntil(d) { return (d.getTime() - Date.now()) / 3600000 }
 // Argentina timezone helpers (UTC-3) — always display/compare in Argentina time
-function toArg(d) { var utcMs = d.getTime() + d.getTimezoneOffset() * 60000; return new Date(utcMs - 3 * 3600000) }
+function toArg(d) { return new Date(d.getTime() - 3 * 3600000) }
 function dayKey(d) { var a = toArg(typeof d === "string" ? new Date(d) : d); return a.getUTCFullYear() + "-" + String(a.getUTCMonth() + 1).padStart(2, "0") + "-" + String(a.getUTCDate()).padStart(2, "0") }
 function matchDay(iso1, iso2) { if (!iso1 || !iso2) return false; return dayKey(typeof iso1 === "string" ? new Date(iso1) : iso1) === dayKey(typeof iso2 === "string" ? new Date(iso2) : iso2) }
 function fmtDate(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; var mn = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]; return dn[a.getUTCDay()] + " " + a.getUTCDate() + " " + mn[a.getUTCMonth()] + " · " + String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
