@@ -415,7 +415,39 @@ function AdminChat(props) {
       await refreshData();
       return "✓ " + al8.nombre + " — " + MN[parsed2.month] + " " + parsed2.year
     }
-    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia"
+    // === MENSAJES ===
+    if (t.startsWith("mensaje general") || t.startsWith("aviso general") || t.startsWith("aviso a todos")) {
+      var msgGen = txt.replace(/^(mensaje general|aviso general|aviso a todos)\s*:?\s*/i, "").trim();
+      if (!msgGen) return "Formato: Mensaje general: [tu texto]";
+      await supa("mensajes", "POST", "", { alumno_id: null, texto: msgGen, es_general: true, leido: false });
+      await refreshData();
+      return "✓ Mensaje general enviado a TODAS las alumnas.\n\nLo verán al entrar a la app:\n\"" + msgGen + "\"";
+    }
+    if (t.startsWith("mensaje a") || t.startsWith("mensaje para")) {
+      var mm = txt.replace(/^mensaje (a|para)\s*:?\s*/i, "").trim();
+      var parts = mm.split("/");
+      if (parts.length < 2) return "Formato: Mensaje a: Nombre / [tu texto]";
+      var idxM = findA(parts[0].trim());
+      if (idxM === -1) return "✗ No encontré ese nombre.";
+      var textoM = parts.slice(1).join("/").trim();
+      await supa("mensajes", "POST", "", { alumno_id: als[idxM].id, texto: textoM, es_general: false, leido: false });
+      await refreshData();
+      return "✓ Mensaje enviado a " + als[idxM].nombre + ":\n\"" + textoM + "\"";
+    }
+    if (t.includes("ver mensajes") || t.includes("mensajes enviados")) {
+      var msgs = await supa("mensajes", "GET", "?order=created_at.desc&limit=20");
+      if (!msgs || !msgs.length) return "No hay mensajes enviados.";
+      return "✦ Últimos mensajes:\n\n" + msgs.map(function (m) {
+        var dest = m.es_general ? "TODAS" : (als.find(function (a) { return a.id === m.alumno_id }) || {}).nombre || "?";
+        return "→ " + dest + (m.leido ? " (leído)" : "") + "\n  \"" + m.texto.slice(0, 60) + (m.texto.length > 60 ? "..." : "") + "\"";
+      }).join("\n\n");
+    }
+    if (t.startsWith("borrar mensajes generales") || t.startsWith("eliminar mensajes generales")) {
+      await supa("mensajes", "DELETE", "?es_general=eq.true");
+      await refreshData();
+      return "✓ Mensajes generales borrados.";
+    }
+    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a"
   }
 
   async function send() {
@@ -1153,6 +1185,36 @@ function MiniCalendar(props) {
 }
 
 // ====== MAIN ======
+function MensajesBanner(props) {
+  var mensajes = props.mensajes, alId = props.alId;
+  var _dismissed = useState({}), dismissed = _dismissed[0], setDismissed = _dismissed[1];
+  var relevantes = (mensajes || []).filter(function (m) {
+    if (dismissed[m.id]) return false;
+    return m.es_general || m.alumno_id === alId;
+  });
+  if (!relevantes.length) return null;
+  async function marcarLeido(m) {
+    setDismissed(function (p) { var o = Object.assign({}, p); o[m.id] = true; return o });
+    if (!m.es_general) { await supa("mensajes", "PATCH", "?id=eq." + m.id, { leido: true }) }
+  }
+  return (
+    <div style={{ padding: "10px 14px", background: "#fdf6ec", borderBottom: "1px solid #e8d4b0" }}>
+      {relevantes.map(function (m) {
+        return (
+          <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: white, borderRadius: 10, border: "1px solid " + gold, marginBottom: 6 }}>
+            <span style={{ fontSize: 18, lineHeight: 1.2 }}>💛</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 10, color: copper, fontFamily: ft, letterSpacing: "1px", textTransform: "uppercase", fontWeight: 600 }}>{m.es_general ? "Aviso del taller" : "Mensaje para vos"}</p>
+              <p style={{ margin: "4px 0 0", fontSize: 13, color: navy, fontFamily: ft, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</p>
+            </div>
+            <button onClick={function () { marcarLeido(m) }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: grayWarm, padding: 0, lineHeight: 1 }}>×</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AppArgentina() {
   var hash = useHash();
   var _als = useState([]), als = _als[0], setAls = _als[1];
@@ -1160,6 +1222,7 @@ function AppArgentina() {
   var _listas = useState([]), listas = _listas[0], setListas = _listas[1];
   var _cuotas = useState([]), cuotas = _cuotas[0], setCuotas = _cuotas[1];
   var _horariosExtra = useState([]), horariosExtra = _horariosExtra[0], setHorariosExtra = _horariosExtra[1];
+  var _mensajes = useState([]), mensajes = _mensajes[0], setMensajes = _mensajes[1];
   var _loading = useState(true), loading = _loading[0], setLoading = _loading[1];
   var _adminAuth = useState(false), adminAuth = _adminAuth[0], setAdminAuth = _adminAuth[1];
   var _adminView = useState("chat"), adminView = _adminView[0], setAdminView = _adminView[1];
@@ -1169,14 +1232,14 @@ function AppArgentina() {
 
   var loadData = useCallback(async function () {
     try {
-      var [alRows, profeRows, pagos, cancs, extras, listasRows, cuotasRows, horariosExtraRows] = await Promise.all([
-        supa("alumnos", "GET", "?estado=eq.activo&order=nombre"), supa("profesoras", "GET", "?order=nombre"), supa("meses_pagados", "GET"), supa("cancelaciones", "GET"), supa("clases_extra", "GET"), supa("listas", "GET"), supa("cuotas", "GET"), supa("horarios_extra", "GET")
+      var [alRows, profeRows, pagos, cancs, extras, listasRows, cuotasRows, horariosExtraRows, mensajesRows] = await Promise.all([
+        supa("alumnos", "GET", "?estado=eq.activo&order=nombre"), supa("profesoras", "GET", "?order=nombre"), supa("meses_pagados", "GET"), supa("cancelaciones", "GET"), supa("clases_extra", "GET"), supa("listas", "GET"), supa("cuotas", "GET"), supa("horarios_extra", "GET"), supa("mensajes", "GET", "?order=created_at.desc")
       ]);
       if (alRows) { for (var ai = 0; ai < alRows.length; ai++) { if (!alRows[ai].password || alRows[ai].password === "" || alRows[ai].password === "null") { var newPw = genPw("eves"); await supa("alumnos", "PATCH", "?id=eq." + alRows[ai].id, { password: newPw }); alRows[ai].password = newPw } } }
       if (profeRows) { for (var pi = 0; pi < profeRows.length; pi++) { if (!profeRows[pi].password || profeRows[pi].password === "" || profeRows[pi].password === "null") { var newPwP = genPw("prof"); await supa("profesoras", "PATCH", "?id=eq." + profeRows[pi].id, { password: newPwP }); profeRows[pi].password = newPwP } } }
       setAls((alRows || []).map(function (r) { return buildAlumnoFromRow(r, pagos || [], cancs || [], extras || []) }));
       setProfes((profeRows || []).map(buildProfeFromRow));
-      setListas(listasRows || []); setCuotas(cuotasRows || []); setHorariosExtra(horariosExtraRows || []);
+      setListas(listasRows || []); setCuotas(cuotasRows || []); setHorariosExtra(horariosExtraRows || []); setMensajes(mensajesRows || []);
     } catch (e) { console.error("Load error:", e) }
     setLoading(false);
   }, []);
@@ -1239,6 +1302,7 @@ function AppArgentina() {
         !logged ? <GenericLogin table="alumnos" onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); if (a) { setLogged(a); setTab("cal") } else refreshData().then(function () { setLogged(row); setTab("cal") }) }} subtitle="Accedé a tus clases" refreshData={refreshData} />
         : (<div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "10px 18px", background: white, borderBottom: "1px solid " + grayBlue }}><p style={{ margin: 0, fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{cur ? cur.nombre : ""}</p><p style={{ margin: 0, color: grayWarm, fontSize: 12, fontFamily: ft }}>{cur ? cur.sede + " · " + cur.turno.dia + " " + cur.turno.hora : ""}</p></div>
+            <MensajesBanner mensajes={mensajes} alId={cur ? cur.id : null} />
             <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
               <button onClick={function () { setTab("cal") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "cal" ? white : cream, color: tab === "cal" ? navy : grayWarm, borderBottom: tab === "cal" ? "2px solid " + copper : "2px solid transparent" }}>Mis clases</button>
               <button onClick={function () { setTab("gest") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "gest" ? white : cream, color: tab === "gest" ? navy : grayWarm, borderBottom: tab === "gest" ? "2px solid " + copper : "2px solid transparent" }}>Gestionar</button></div>
