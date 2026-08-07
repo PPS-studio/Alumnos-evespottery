@@ -53,6 +53,14 @@ function allClassesForAlumno(al, month, year) {
   return c1;
 }
 function parseMes(s) { var low = s.toLowerCase(); for (var i = 0; i < MN.length; i++) { if (low.includes(MN[i])) { var ym = low.match(/\d{4}/); var y = ym ? parseInt(ym[0]) : new Date().getFullYear(); return { month: i, year: y, key: y + "-" + i } } } return null }
+// Build a UTC Date that represents the given Argentina-local day+time (from a reference day in any timezone)
+function argDateFor(refDate, hora) {
+  var a = toArg(refDate); // reference day in Argentina
+  var tp = hora.split(":"); var h = parseInt(tp[0]) + 3; var extraDay = 0;
+  if (h >= 24) { h -= 24; extraDay = 1 }
+  return new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate() + extraDay, h, parseInt(tp[1]), 0, 0));
+}
+function argDayName(refDate) { var a = toArg(refDate); var dow = a.getUTCDay(); var idx = dow === 0 ? 6 : dow - 1; return DAYS[idx] }
 function classesInMonth(day, time, month, year) {
   var tgt = DAYS.indexOf(day); var res = [];
   var daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -421,15 +429,48 @@ function AdminChat(props) {
       if (!msgGen) return "Formato: Mensaje general: [tu texto]";
       await supa("mensajes", "POST", "", { alumno_id: null, texto: msgGen, es_general: true, leido: false });
       await refreshData();
-      return "✓ Mensaje general enviado a TODAS las alumnas.\n\nLo verán al entrar a la app:\n\"" + msgGen + "\"";
+      return "✓ Mensaje general enviado a TODAS las alumnas.\n\n\"" + msgGen + "\"";
+    }
+    // Mensaje segmentado por sede: "Mensaje San Isidro: ..." / "Mensaje Palermo: ..."
+    var sedeMatch = txt.match(/^mensaje\s+(san isidro|palermo)\s*:\s*/i);
+    if (sedeMatch) {
+      var sedeVal = sedeMatch[1].toLowerCase() === "palermo" ? "Palermo" : "San Isidro";
+      var textoSede = txt.slice(sedeMatch[0].length).trim();
+      if (!textoSede) return "Formato: Mensaje " + sedeVal + ": [tu texto]";
+      await supa("mensajes", "POST", "", { alumno_id: null, texto: textoSede, es_general: false, leido: false, filtro_sede: sedeVal });
+      await refreshData();
+      var countSede = als.filter(function (a) { return a.sede === sedeVal }).length;
+      return "✓ Mensaje enviado a las alumnas de " + sedeVal + " (" + countSede + ").\n\n\"" + textoSede + "\"";
+    }
+    // Mensaje segmentado por día (+ hora opcional): "Mensaje jueves: ..." o "Mensaje jueves 18:30: ..."
+    var diaMatch = txt.match(/^mensaje\s+(lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)(\s+(\d{1,2}:\d{2}))?\s*:\s*/i);
+    if (diaMatch) {
+      var diaVal = diaMatch[1].toLowerCase().replace("miercoles", "miércoles").replace("sabado", "sábado");
+      var horaVal = diaMatch[3] || null;
+      var textoDia = txt.slice(diaMatch[0].length).trim();
+      if (!textoDia) return "Formato: Mensaje " + diaVal + (horaVal ? " " + horaVal : "") + ": [tu texto]";
+      var payloadDia = { alumno_id: null, texto: textoDia, es_general: false, leido: false, filtro_dia: diaVal };
+      if (horaVal) payloadDia.filtro_hora = horaVal;
+      await supa("mensajes", "POST", "", payloadDia);
+      await refreshData();
+      var countDia = als.filter(function (a) { return a.turno.dia === diaVal && (!horaVal || a.turno.hora === horaVal) }).length;
+      return "✓ Mensaje enviado a las alumnas de " + diaVal + (horaVal ? " " + horaVal : "") + " (" + countDia + ").\n\n\"" + textoDia + "\"";
+    }
+    // Mensaje a deudoras
+    if (t.startsWith("mensaje deudoras") || t.startsWith("mensaje a deudoras") || t.startsWith("mensaje deudores")) {
+      var textoDeuda = txt.replace(/^mensaje\s*(a\s*)?(deudoras|deudores)\s*:?\s*/i, "").trim();
+      if (!textoDeuda) return "Formato: Mensaje deudoras: [tu texto]";
+      await supa("mensajes", "POST", "", { alumno_id: null, texto: textoDeuda, es_general: false, leido: false, filtro_deuda: true });
+      await refreshData();
+      return "✓ Mensaje enviado a las alumnas con pagos pendientes.\n\n\"" + textoDeuda + "\"";
     }
     if (t.startsWith("mensaje a") || t.startsWith("mensaje para")) {
       var mm = txt.replace(/^mensaje (a|para)\s*:?\s*/i, "").trim();
-      var parts = mm.split("/");
-      if (parts.length < 2) return "Formato: Mensaje a: Nombre / [tu texto]";
-      var idxM = findA(parts[0].trim());
+      var partsM = mm.split("/");
+      if (partsM.length < 2) return "Formato: Mensaje a: Nombre / [tu texto]";
+      var idxM = findA(partsM[0].trim());
       if (idxM === -1) return "✗ No encontré ese nombre.";
-      var textoM = parts.slice(1).join("/").trim();
+      var textoM = partsM.slice(1).join("/").trim();
       await supa("mensajes", "POST", "", { alumno_id: als[idxM].id, texto: textoM, es_general: false, leido: false });
       await refreshData();
       return "✓ Mensaje enviado a " + als[idxM].nombre + ":\n\"" + textoM + "\"";
@@ -438,8 +479,13 @@ function AdminChat(props) {
       var msgs = await supa("mensajes", "GET", "?order=created_at.desc&limit=20");
       if (!msgs || !msgs.length) return "No hay mensajes enviados.";
       return "✦ Últimos mensajes:\n\n" + msgs.map(function (m) {
-        var dest = m.es_general ? "TODAS" : (als.find(function (a) { return a.id === m.alumno_id }) || {}).nombre || "?";
-        return "→ " + dest + (m.leido ? " (leído)" : "") + "\n  \"" + m.texto.slice(0, 60) + (m.texto.length > 60 ? "..." : "") + "\"";
+        var dest;
+        if (m.alumno_id) dest = (als.find(function (a) { return a.id === m.alumno_id }) || {}).nombre || "?";
+        else if (m.filtro_deuda) dest = "DEUDORAS";
+        else if (m.filtro_dia) dest = m.filtro_dia + (m.filtro_hora ? " " + m.filtro_hora : "");
+        else if (m.filtro_sede) dest = m.filtro_sede;
+        else dest = "TODAS";
+        return "→ " + dest + (m.leido ? " (leído)" : "") + "\n  \"" + m.texto.slice(0, 50) + (m.texto.length > 50 ? "..." : "") + "\"";
       }).join("\n\n");
     }
     if (t.startsWith("borrar mensajes generales") || t.startsWith("eliminar mensajes generales")) {
@@ -447,7 +493,12 @@ function AdminChat(props) {
       await refreshData();
       return "✓ Mensajes generales borrados.";
     }
-    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a"
+    if (t.startsWith("borrar todos los mensajes")) {
+      await supa("mensajes", "DELETE", "?id=gte.0");
+      await refreshData();
+      return "✓ Todos los mensajes borrados.";
+    }
+    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a: Nombre, mensaje [día], mensaje [sede], mensaje deudoras, ver mensajes"
   }
 
   async function send() {
@@ -546,16 +597,14 @@ function ProfeClases(props) {
   profe.horarios.forEach(function (h) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
     for (var dd = new Date(now); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
-      var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
-      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); if (dt > now) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); var fijos = countFijosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.length, fijos: fijos, feriado: isFeriado(dt), produccion: false }) } }
+      if (argDayName(dd) === dia) { var dt = argDateFor(dd, hora); if (dt > now) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); var fijos = countFijosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected.length, fijos: fijos, feriado: isFeriado(dt), produccion: false }) } }
     }
   });
   // Add production hours
   profeProduccion.forEach(function (h) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
     for (var dd = new Date(now); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
-      var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
-      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); if (dt > now && !isFeriado(dt)) { clases.push({ date: dt, dia: dia, hora: hora, alumnos: 0, fijos: 0, feriado: false, produccion: true }) } }
+      if (argDayName(dd) === dia) { var dt = argDateFor(dd, hora); if (dt > now && !isFeriado(dt)) { clases.push({ date: dt, dia: dia, hora: hora, alumnos: 0, fijos: 0, feriado: false, produccion: true }) } }
     }
   });
   clases.sort(function (a, b) { return a.date - b.date });
@@ -598,8 +647,7 @@ function ProfeLista(props) {
   profe.horarios.forEach(function (h) {
     var parts = h.split("-"); var dia = parts[0], hora = parts[1];
     for (var dd = new Date(monthStart); dd <= limit; dd = new Date(dd.getTime() + 86400000)) {
-      var dow = dd.getDay(); var dayIdx = dow === 0 ? 6 : dow - 1;
-      if (DAYS[dayIdx] === dia) { var dt = new Date(dd); var tp = hora.split(":"); dt.setHours(parseInt(tp[0]), parseInt(tp[1]), 0, 0); var iso = dt.toISOString(); var yaTomada = listas.some(function (l) { return l.profe === profe.nombre && matchDay(l.fecha_iso, iso) }); if (!yaTomada && !isFeriado(dt)) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: dt < now }) } }
+      if (argDayName(dd) === dia) { var dt = argDateFor(dd, hora); var iso = dt.toISOString(); var yaTomada = listas.some(function (l) { return l.profe === profe.nombre && matchDay(l.fecha_iso, iso) }); if (!yaTomada && !isFeriado(dt)) { var expected = getAlumnosForSlot(als, profe.sede, dia, hora, dt); clases.push({ date: dt, dia: dia, hora: hora, alumnos: expected, iso: iso, pendiente: dt < now }) } }
     }
   });
   clases.sort(function (a, b) { return a.date - b.date });
@@ -1185,7 +1233,178 @@ function MiniCalendar(props) {
 }
 
 // ====== MAIN ======
+var VAPID_PUBLIC = "BG0lGJXc7dfJK-KnmcSBQcsVleGBfbZwv4weG63gGSkxOOlcb3hqVH0BypoDExFVjZ0Ud33x6ttwOmw_Qc6MQZM";
+
+function urlB64ToUint8(base64) {
+  var padding = "=".repeat((4 - base64.length % 4) % 4);
+  var b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  var raw = window.atob(b64); var arr = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+// Filtra mensajes que le corresponden a una alumna (general, por día, hora, sede, deuda o dirigido)
+function mensajesParaAlumna(mensajes, al) {
+  if (!al) return [];
+  return (mensajes || []).filter(function (m) {
+    if (m.alumno_id === al.id) return true;
+    if (m.alumno_id) return false; // dirigido a otra
+    // segmentados
+    if (m.filtro_deuda) { /* deuda calc externa, se maneja aparte */ }
+    if (m.filtro_dia && m.filtro_dia !== al.turno.dia) return false;
+    if (m.filtro_hora && m.filtro_hora !== al.turno.hora) return false;
+    if (m.filtro_sede && m.filtro_sede !== al.sede) return false;
+    return true; // general o cumple todos los filtros presentes
+  });
+}
+
+function TabMensajes(props) {
+  var mensajes = props.mensajes, al = props.al;
+  var lista = mensajesParaAlumna(mensajes, al).slice().sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at) });
+  if (!lista.length) return (
+    <div style={{ padding: 36, textAlign: "center" }}>
+      <p style={{ fontSize: 40, opacity: 0.35, margin: 0 }}>✉️</p>
+      <p style={{ color: grayWarm, fontSize: 14, fontFamily: ft, margin: "10px 0 0" }}>No tenés mensajes por ahora.</p>
+    </div>
+  );
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      {lista.map(function (m) {
+        var etiqueta = m.alumno_id ? "Para vos" : (m.filtro_dia || m.filtro_hora || m.filtro_sede ? "Aviso de tu grupo" : "Aviso del taller");
+        var fecha = new Date(m.created_at);
+        return (
+          <div key={m.id} style={{ padding: "14px 16px", background: white, borderRadius: 12, border: "1px solid " + gold }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: copper, fontFamily: ft, letterSpacing: "1px", textTransform: "uppercase", fontWeight: 600 }}>{etiqueta}</span>
+              <span style={{ fontSize: 10, color: grayWarm, fontFamily: ft }}>{String(fecha.getDate()).padStart(2, "0") + "/" + String(fecha.getMonth() + 1).padStart(2, "0")}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: 14, color: navy, fontFamily: ft, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabNotificaciones(props) {
+  var al = props.al;
+  var _prefs = useState(null), prefs = _prefs[0], setPrefs = _prefs[1];
+  var _loading = useState(true), loading = _loading[0], setLoading = _loading[1];
+  var _saving = useState(false), saving = _saving[0], setSaving = _saving[1];
+  var _err = useState(""), err = _err[0], setErr = _err[1];
+
+  useEffect(function () {
+    var cancelled = false;
+    (async function () {
+      setLoading(true);
+      var rows = await supa("push_subs", "GET", "?alumno_id=eq." + al.id);
+      if (cancelled) return;
+      if (rows && rows.length) setPrefs(rows[0]);
+      else setPrefs({ alumno_id: al.id, subscription: null, notif_generales: false, notif_48h: false, notif_2h: false });
+      setLoading(false);
+    })();
+    return function () { cancelled = true };
+  }, [al.id]);
+
+  async function ensureSubscription() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      throw new Error("Tu navegador no soporta notificaciones. En iPhone, agregá la app a la pantalla de inicio primero.");
+    }
+    var perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("Necesitás permitir las notificaciones en tu navegador.");
+    var reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC) });
+    }
+    return JSON.parse(JSON.stringify(sub));
+  }
+
+  async function toggle(campo) {
+    setErr(""); setSaving(true);
+    try {
+      var nuevoValor = !prefs[campo];
+      var subJson = prefs.subscription;
+      // Si prende cualquier notificación y no hay subscription, pedirla
+      if (nuevoValor && !subJson) { subJson = await ensureSubscription(); }
+      var payload = Object.assign({}, prefs, { subscription: subJson }); payload[campo] = nuevoValor;
+      delete payload.id; delete payload.created_at; delete payload.updated_at;
+      // upsert
+      var existing = await supa("push_subs", "GET", "?alumno_id=eq." + al.id);
+      if (existing && existing.length) {
+        await supa("push_subs", "PATCH", "?alumno_id=eq." + al.id, { subscription: subJson, notif_generales: payload.notif_generales, notif_48h: payload.notif_48h, notif_2h: payload.notif_2h, updated_at: new Date().toISOString() });
+      } else {
+        await supa("push_subs", "POST", "", payload);
+      }
+      setPrefs(Object.assign({}, prefs, { subscription: subJson, [campo]: nuevoValor }));
+    } catch (e) { setErr(e.message || "No se pudo activar."); }
+    setSaving(false);
+  }
+
+  if (loading || !prefs) return <div style={{ padding: 36, textAlign: "center", color: grayWarm, fontFamily: ft, fontSize: 14 }}>Cargando…</div>;
+
+  var rows = [
+    { campo: "notif_generales", titulo: "Avisos del taller", desc: "Novedades y mensajes importantes que enviamos." },
+    { campo: "notif_48h", titulo: "Recordatorio 48 h antes", desc: "Te avisamos 48 h antes de cada clase, así tenés tiempo de cancelar si no podés ir." },
+    { campo: "notif_2h", titulo: "Recordatorio 2 h antes", desc: "Un aviso 2 h antes para que no se te pase la clase." }
+  ];
+
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: "#fdf6ec", borderRadius: 10, padding: "12px 14px", border: "1px solid #e8d4b0" }}>
+        <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft, lineHeight: 1.5 }}>Prendé las notificaciones que quieras recibir. Solo te llega lo que actives.</p>
+      </div>
+      {rows.map(function (r) {
+        var on = !!prefs[r.campo];
+        return (
+          <div key={r.campo} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: white, borderRadius: 12, border: "1px solid " + (on ? gold : grayBlue) }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontWeight: 600, color: navy, fontFamily: ft, fontSize: 14 }}>{r.titulo}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 12, color: grayWarm, fontFamily: ft, lineHeight: 1.4 }}>{r.desc}</p>
+            </div>
+            <button onClick={function () { if (!saving) toggle(r.campo) }} disabled={saving}
+              style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: saving ? "default" : "pointer", background: on ? olive : grayBlue, position: "relative", transition: "background .2s", flexShrink: 0 }}>
+              <span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: white, transition: "left .2s" }} />
+            </button>
+          </div>
+        );
+      })}
+      {err ? <p style={{ color: "#991b1b", fontSize: 13, fontFamily: ft, margin: "4px 0 0", lineHeight: 1.5 }}>{err}</p> : null}
+      <p style={{ fontSize: 11, color: grayWarm, fontFamily: ft, textAlign: "center", lineHeight: 1.6, margin: "6px 0 0" }}>
+        En iPhone, agregá la app a tu pantalla de inicio para recibir notificaciones.
+      </p>
+    </div>
+  );
+}
+
 function MensajesBanner(props) {
+  var mensajes = props.mensajes, al = props.al;
+  var _dismissed = useState({}), dismissed = _dismissed[0], setDismissed = _dismissed[1];
+  var relevantes = mensajesParaAlumna(mensajes, al).filter(function (m) { return !dismissed[m.id] });
+  if (!relevantes.length) return null;
+  async function marcarLeido(m) {
+    setDismissed(function (p) { var o = Object.assign({}, p); o[m.id] = true; return o });
+    if (!m.es_general) { await supa("mensajes", "PATCH", "?id=eq." + m.id, { leido: true }) }
+  }
+  return (
+    <div style={{ padding: "10px 14px", background: "#fdf6ec", borderBottom: "1px solid #e8d4b0" }}>
+      {relevantes.map(function (m) {
+        return (
+          <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: white, borderRadius: 10, border: "1px solid " + gold, marginBottom: 6 }}>
+            <span style={{ fontSize: 18, lineHeight: 1.2 }}>💛</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 10, color: copper, fontFamily: ft, letterSpacing: "1px", textTransform: "uppercase", fontWeight: 600 }}>{m.alumno_id ? "Mensaje para vos" : "Aviso del taller"}</p>
+              <p style={{ margin: "4px 0 0", fontSize: 13, color: navy, fontFamily: ft, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</p>
+            </div>
+            <button onClick={function () { marcarLeido(m) }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: grayWarm, padding: 0, lineHeight: 1 }}>×</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function MensajesBannerOLD(props) {
   var mensajes = props.mensajes, alId = props.alId;
   var _dismissed = useState({}), dismissed = _dismissed[0], setDismissed = _dismissed[1];
   var relevantes = (mensajes || []).filter(function (m) {
@@ -1303,12 +1522,16 @@ function AppArgentina() {
         : (<div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "10px 18px", background: white, borderBottom: "1px solid " + grayBlue }}><p style={{ margin: 0, fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{cur ? cur.nombre : ""}</p><p style={{ margin: 0, color: grayWarm, fontSize: 12, fontFamily: ft }}>{cur ? cur.sede + " · " + cur.turno.dia + " " + cur.turno.hora : ""}</p></div>
             <MensajesBanner mensajes={mensajes} alId={cur ? cur.id : null} />
-            <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
-              <button onClick={function () { setTab("cal") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "cal" ? white : cream, color: tab === "cal" ? navy : grayWarm, borderBottom: tab === "cal" ? "2px solid " + copper : "2px solid transparent" }}>Mis clases</button>
-              <button onClick={function () { setTab("gest") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "gest" ? white : cream, color: tab === "gest" ? navy : grayWarm, borderBottom: tab === "gest" ? "2px solid " + copper : "2px solid transparent" }}>Gestionar</button></div>
+            <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue, overflowX: "auto" }}>
+              <button onClick={function () { setTab("cal") }} style={{ flex: "1 0 auto", padding: "11px 14px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "cal" ? white : cream, color: tab === "cal" ? navy : grayWarm, borderBottom: tab === "cal" ? "2px solid " + copper : "2px solid transparent", whiteSpace: "nowrap" }}>Mis clases</button>
+              <button onClick={function () { setTab("gest") }} style={{ flex: "1 0 auto", padding: "11px 14px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "gest" ? white : cream, color: tab === "gest" ? navy : grayWarm, borderBottom: tab === "gest" ? "2px solid " + copper : "2px solid transparent", whiteSpace: "nowrap" }}>Gestionar</button>
+              <button onClick={function () { setTab("msg") }} style={{ flex: "1 0 auto", padding: "11px 14px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "msg" ? white : cream, color: tab === "msg" ? navy : grayWarm, borderBottom: tab === "msg" ? "2px solid " + copper : "2px solid transparent", whiteSpace: "nowrap" }}>Mensajes</button>
+              <button onClick={function () { setTab("notif") }} style={{ flex: "1 0 auto", padding: "11px 14px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "notif" ? white : cream, color: tab === "notif" ? navy : grayWarm, borderBottom: tab === "notif" ? "2px solid " + copper : "2px solid transparent", whiteSpace: "nowrap" }}>🔔</button></div>
             <div style={{ flex: 1, overflow: "auto", background: white }}>
               {tab === "cal" && cur ? <AlumnoCal al={cur} cuotas={cuotas} /> : null}
               {tab === "gest" && cur ? <AlumnoFlow al={cur} allAls={als} refreshData={refreshData} cuotas={cuotas} horariosExtra={horariosExtra} /> : null}
+              {tab === "msg" && cur ? <TabMensajes mensajes={mensajes} al={cur} /> : null}
+              {tab === "notif" && cur ? <TabNotificaciones al={cur} /> : null}
             </div></div>)
       )}
     </div>);
