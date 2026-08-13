@@ -83,6 +83,15 @@ function fmtDate(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "
 function fmtDateShort(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; return dn[a.getUTCDay()] + " " + a.getUTCDate() + "/" + (a.getUTCMonth() + 1) + " " + String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
 function genPw(prefix) { return prefix + String(Math.floor(1000 + Math.random() * 9000)) }
 function fmtMoney(n) { return "$" + Number(n).toLocaleString("es-AR") }
+function conDesc(precio, descuento) { if (!descuento) return precio; return Math.round(precio * (1 - descuento / 100)) }
+// Renderiza un precio: si hay descuento, muestra original tachado + con descuento
+function PrecioConDesc(props) {
+  var precio = props.precio, descuento = props.descuento || 0, label = props.label, color = props.color || "#991b1b";
+  if (!descuento) {
+    return (<div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: color, fontFamily: ft }}>{label}</p><p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: color, fontFamily: ft }}>{fmtMoney(precio)}</p></div>);
+  }
+  return (<div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: color, fontFamily: ft }}>{label}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: color, fontFamily: ft, textDecoration: "line-through", opacity: 0.6 }}>{fmtMoney(precio)}</p><p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: color, fontFamily: ft }}>{fmtMoney(conDesc(precio, descuento))}</p></div>);
+}
 function getCuotaInfo(cuotas, sede, frecuencia) {
   if (!cuotas || !cuotas.length) return null;
   var day = new Date().getDate();
@@ -116,7 +125,7 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
     return { date: e.fecha_iso, mk: e.mes_key, tipo: e.tipo }
   });
   var turno2 = row.turno2_dia && row.turno2_hora ? { dia: row.turno2_dia, hora: row.turno2_hora } : null;
-  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, turno2: turno2, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x" }
+  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, turno2: turno2, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x", excepcion: !!row.excepcion, descuento: row.descuento || 0 }
 }
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
@@ -498,7 +507,19 @@ function AdminChat(props) {
       await refreshData();
       return "✓ Todos los mensajes borrados.";
     }
-    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a: Nombre, mensaje [día], mensaje [sede], mensaje deudoras, ver mensajes"
+    // === EXCEPCIÓN (puede reservar sin pagar) ===
+    if (t.startsWith("excepcion") || t.startsWith("excepción")) {
+      var quitarExc = t.includes("quitar") || t.includes("sacar") || t.includes("desactivar");
+      var nombreExc = txt.replace(/^excepci[oó]n\s*(quitar|sacar|desactivar)?\s*:?\s*/i, "").trim();
+      if (!nombreExc) return "Formato: Excepción: Nombre (para activar) · Excepción quitar: Nombre (para sacar)";
+      var idxExc = findA(nombreExc);
+      if (idxExc === -1) return "✗ No encontré ese nombre.";
+      await supa("alumnos", "PATCH", "?id=eq." + als[idxExc].id, { excepcion: !quitarExc });
+      await supa("historial", "POST", "", { alumno_id: als[idxExc].id, accion: quitarExc ? "Excepción quitada" : "⭐ Excepción activada — puede reservar sin pago" });
+      await refreshData();
+      return (quitarExc ? "✓ Excepción quitada a " : "✓ Excepción activada para ") + als[idxExc].nombre + (quitarExc ? "." : ". Ahora puede reservar sin necesidad de pagar.");
+    }
+    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a: Nombre, mensaje [día], mensaje [sede], mensaje deudoras, ver mensajes, excepción"
   }
 
   async function send() {
@@ -1054,12 +1075,12 @@ function AlumnoCal(props) {
       <h3 style={{ margin: "0 0 2px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 18 }}>Tus clases</h3>
       <p style={{ margin: "0 0 14px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{al.turno.dia + " " + al.turno.hora + (al.turno2 ? " y " + al.turno2.dia + " " + al.turno2.hora : "") + " · " + al.sede}</p>
       {!paidCurrent && cuotaInfo ? (<div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5", marginBottom: 14 }}>
-        <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 15, fontFamily: ft }}>{"Cuota de " + MN[now.getMonth()] + " pendiente"}</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 15, fontFamily: ft }}>{"Cuota de " + MN[now.getMonth()] + " pendiente"}</p>{al.descuento ? <span style={{ background: "#d97706", color: white, fontSize: 11, fontWeight: 700, fontFamily: ft, padding: "3px 9px", borderRadius: 20 }}>{al.descuento + "% OFF 💛"}</span> : null}</div>
         <div style={{ marginTop: 10, background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "12px 14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Efectivo</p><p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.efectivo)}</p></div>
-            <div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Transferencia</p><p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.transferencia)}</p></div></div>
-          {cuotaInfo.diasRestantes ? (<div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "") + " para pagar este precio"}</p>{cuotaInfo.nextAumento ? <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e", fontFamily: ft }}>{"Después: ef. " + fmtMoney(cuotaInfo.nextAumento.efectivo) + " · transf. " + fmtMoney(cuotaInfo.nextAumento.transferencia)}</p> : null}</div>) : null}
+            <PrecioConDesc precio={cuotaInfo.efectivo} descuento={al.descuento} label="Efectivo" />
+            <PrecioConDesc precio={cuotaInfo.transferencia} descuento={al.descuento} label="Transferencia" /></div>
+          {cuotaInfo.diasRestantes ? (<div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "") + " para pagar este precio"}</p>{cuotaInfo.nextAumento ? <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e", fontFamily: ft }}>{"Después: ef. " + fmtMoney(conDesc(cuotaInfo.nextAumento.efectivo, al.descuento)) + " · transf. " + fmtMoney(conDesc(cuotaInfo.nextAumento.transferencia, al.descuento))}</p> : null}</div>) : null}
         </div></div>) : null}
       {showNextMonth && !paidNext ? (<div style={{ background: "#fdf6ec", borderRadius: 12, padding: 14, border: "1px solid #e8d4b0", marginBottom: 14 }}>
         <p style={{ margin: 0, fontWeight: 600, color: copper, fontSize: 14, fontFamily: ft }}>{"📅 " + MN[nxtDate.getMonth()] + " — Ya podés ver tus clases del mes que viene"}</p>
@@ -1081,9 +1102,9 @@ function AlumnoCal(props) {
 // ====== ALUMNO FLOW ======
 function AlumnoFlow(props) {
   var al = props.al, allAls = props.allAls, refreshData = props.refreshData, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
-  var pm = Object.keys(al.mp || {}); var paid = pm.length > 0;
+  var pm = Object.keys(al.mp || {}); var paid = pm.length > 0 || al.excepcion;
   var now = new Date(); var curMk = now.getFullYear() + "-" + now.getMonth();
-  var paidCurrent = !!(al.mp || {})[curMk];
+  var paidCurrent = !!(al.mp || {})[curMk] || al.excepcion;
   var cuotaInfo = getCuotaInfo(cuotas, al.sede, al.frecuencia || "1x");
   var _st = useState("menu"), step = _st[0], setStep = _st[1];
   var _sel = useState(null), sel = _sel[0], setSel = _sel[1];
@@ -1102,7 +1123,7 @@ function AlumnoFlow(props) {
 
   // Next month visible from day 20
   var showNextMonth = now.getDate() >= 20;
-  var paidNext = !!(al.mp || {})[nxtMk];
+  var paidNext = !!(al.mp || {})[nxtMk] || al.excepcion;
 
   function getUp() {
     var cls = [];
@@ -1174,7 +1195,7 @@ function AlumnoFlow(props) {
       <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", height: "100%" }}>
         <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, border: "1px solid #fca5a5" }}>
           <p style={{ margin: 0, fontWeight: 700, color: "#991b1b", fontSize: 15, fontFamily: ft }}>{"Cuota de " + MN[now.getMonth()] + " pendiente"}</p>
-          {cuotaInfo ? (<div style={{ marginTop: 10, background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between" }}><div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Efectivo</p><p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.efectivo)}</p></div><div style={{ textAlign: "center", flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#991b1b", fontFamily: ft }}>Transferencia</p><p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#991b1b", fontFamily: ft }}>{fmtMoney(cuotaInfo.transferencia)}</p></div></div>{cuotaInfo.diasRestantes ? (<div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "")}</p></div>) : null}<p style={{ margin: "10px 0 0", fontSize: 12, color: "#991b1b", fontFamily: ft }}>Podés cancelar clases, pero no recuperar hasta pagar.</p></div>) : <p style={{ margin: "6px 0 0", color: "#991b1b", fontSize: 13, fontFamily: ft }}>Podés cancelar, pero no recuperar hasta pagar.</p>}
+          {cuotaInfo ? (<div style={{ marginTop: 10, background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "12px 14px" }}>{al.descuento ? <div style={{ textAlign: "center", marginBottom: 8 }}><span style={{ background: "#d97706", color: white, fontSize: 11, fontWeight: 700, fontFamily: ft, padding: "3px 9px", borderRadius: 20 }}>{al.descuento + "% OFF 💛"}</span></div> : null}<div style={{ display: "flex", justifyContent: "space-between" }}><PrecioConDesc precio={cuotaInfo.efectivo} descuento={al.descuento} label="Efectivo" /><PrecioConDesc precio={cuotaInfo.transferencia} descuento={al.descuento} label="Transferencia" /></div>{cuotaInfo.diasRestantes ? (<div style={{ marginTop: 10, background: "#fde68a", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: ft }}>{"Te quedan " + cuotaInfo.diasRestantes + " día" + (cuotaInfo.diasRestantes > 1 ? "s" : "")}</p></div>) : null}<p style={{ margin: "10px 0 0", fontSize: 12, color: "#991b1b", fontFamily: ft }}>Podés cancelar clases, pero no recuperar hasta pagar.</p></div>) : <p style={{ margin: "6px 0 0", color: "#991b1b", fontSize: 13, fontFamily: ft }}>Podés cancelar, pero no recuperar hasta pagar.</p>}
         </div>
         {step === "menu" ? (<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button onClick={function () { doPayNotif(); setStep("ps") }} disabled={busy} style={{ padding: "12px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600, width: "100%", fontFamily: ft, background: copper, color: white, border: "none", textAlign: "left" }}>{busy ? "Enviando..." : "Ya hice el pago"}</button>
