@@ -721,6 +721,7 @@ function ProfeLista(props) {
     <div style={{ padding: 20 }}>
       <h3 style={{ margin: "0 0 4px", color: navy, fontFamily: ft, fontWeight: 700, fontSize: 16 }}>{fmtDate(sel.date)}</h3>
       <p style={{ margin: "0 0 16px", color: grayWarm, fontSize: 13, fontFamily: ft }}>{sel.alumnos.length + " esperado" + (sel.alumnos.length !== 1 ? "s" : "")}</p>
+      <div style={{ display: "flex", gap: 14, marginBottom: 14, fontSize: 12, fontFamily: ft, color: grayWarm }}><span><span style={{ color: "#5a6a2a", fontWeight: 700 }}>✓</span> Vino</span><span><span style={{ color: "#991b1b", fontWeight: 700 }}>✗</span> Ausente (no se recupera)</span></div>
       {sel.alumnos.map(function (a) { var id = a.alumno.id; var v = marks[id]; var isExp = expanded === id; var alNotas = getNotasFor(id); return (<div key={id} style={{ marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: isExp ? "10px 10px 0 0" : 10, border: "1px solid " + (isExp ? copper : grayBlue), background: v === true ? "#f0f5e8" : v === false ? "#fef2f2" : white }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
@@ -1031,8 +1032,8 @@ function AlumnoCal(props) {
   curClasses.forEach(function (d) {
     var cancelled = cm.some(function (c) { return matchDay(c.iso, d) });
     var cancelInfo = cm.find(function (c) { return matchDay(c.iso, d) });
-    var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false;
-    if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup });
+    var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; var ausente = cancelInfo ? cancelInfo.sinAviso : false;
+    if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup, ausente: ausente });
     else all.push({ date: d, extra: false, feriado: feriado });
   });
   // Next month classes (from day 20)
@@ -1042,8 +1043,8 @@ function AlumnoCal(props) {
     nxtClasses.forEach(function (d) {
       var cancelled = nxtCanc.some(function (c) { return matchDay(c.iso, d) });
       var cancelInfo = nxtCanc.find(function (c) { return matchDay(c.iso, d) });
-      var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false;
-      if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup, nextMonth: true });
+      var feriado = isFeriado(d); var sinRecup = cancelInfo ? cancelInfo.noR : false; var ausente = cancelInfo ? cancelInfo.sinAviso : false;
+      if (cancelled) all.push({ date: d, extra: false, feriado: feriado, cancelled: true, sinRecup: sinRecup, ausente: ausente, nextMonth: true });
       else all.push({ date: d, extra: false, feriado: feriado, nextMonth: true });
     });
   }
@@ -1093,8 +1094,8 @@ function AlumnoCal(props) {
           return (<div key={i} style={{ padding: "14px 16px", borderRadius: 10, background: canc ? "#fef2f2" : fer ? "#fdf6ec" : past ? cream : c.nextMonth ? "#f8f6f2" : white, border: "1px solid " + (canc ? "#fca5a5" : fer ? "#e8d4b0" : past ? grayBlue : c.nextMonth ? "#e8d4b0" : gold), opacity: past && !canc ? 0.45 : 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 600, color: canc ? "#991b1b" : navy, fontFamily: ft, fontSize: 14, textDecoration: canc ? "line-through" : "none" }}>{fmtDate(c.date)}</span>
-              {canc && fer ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : canc ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>CANCELADA</span> : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : c.nextMonth ? <span style={{ fontSize: 11, background: copper, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>{MN[c.date.getMonth()]}</span> : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}</div>
-            {canc ? <div style={{ fontSize: 12, color: "#991b1b", marginTop: 5, fontFamily: ft }}>{c.sinRecup ? "No se recupera" : "Podrás recuperarla"}</div> : null}
+              {canc && fer ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : canc && c.ausente ? <span style={{ fontSize: 11, background: "#6b7280", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>AUSENTE</span> : canc ? <span style={{ fontSize: 11, background: "#991b1b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>CANCELADA</span> : fer ? <span style={{ fontSize: 11, background: "#f59e0b", color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>FERIADO</span> : c.nextMonth ? <span style={{ fontSize: 11, background: copper, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>{MN[c.date.getMonth()]}</span> : c.extra ? <span style={{ fontSize: 11, background: olive, color: white, padding: "2px 8px", borderRadius: 8, fontFamily: ft }}>recuperación</span> : null}</div>
+            {canc ? <div style={{ fontSize: 12, color: c.ausente ? "#6b7280" : "#991b1b", marginTop: 5, fontFamily: ft }}>{c.ausente ? "No viniste a esta clase · no se recupera" : c.sinRecup ? "No se recupera" : "Podrás recuperarla"}</div> : null}
             {!past && !fer && !canc && h < 24 ? <div style={{ fontSize: 11, color: copper, marginTop: 5, fontFamily: ft }}>{"⚠ Menos de 24h"}</div> : null}
           </div>) })}</div></div>);
 }
