@@ -130,7 +130,7 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
   var sede = sedes.length > 0 ? sedes[0] : "Palermo";
-  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null }
+  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false }
 }
 function getMonthStats(al, mk) {
   var p = mk.split("-").map(Number);
@@ -583,10 +583,493 @@ function GenericLogin(props) {
         </div></div></div>);
 }
 
+// ====== STOCK DEL TALLER ======
+function letraStock(i) { var s = ""; i = Math.floor(i); while (i >= 0) { s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i / 26) - 1 } return s }
+function fotoUrlStock(path) { return SUPA_URL + "/storage/v1/object/public/stock/" + path }
+function capStock(s) { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1) }
+function numStock(v) { var n = Number(v); return isNaN(n) ? 0 : n }
+function fmtCantStock(v) { var n = numStock(v); var r = Math.round(n * 100) / 100; return String(r).replace(".", ",") }
+function etiquetasStock(cat, prod) {
+  if (!cat) return [];
+  if (!cat.usa_letras) return [cat.singular + " " + prod.numero];
+  var n = Math.max(1, Math.round(numStock(prod.cantidad)));
+  if (n > 60) n = 60;
+  var out = []; for (var i = 0; i < n; i++) out.push(cat.singular + " " + prod.numero + "." + letraStock(i));
+  return out;
+}
+function comprimirFotoStock(file) {
+  return new Promise(function (resolve) {
+    try {
+      var img = new Image(); var url = URL.createObjectURL(file);
+      img.onload = function () {
+        try {
+          var max = 1400; var w = img.width, h = img.height;
+          var esc = Math.min(1, max / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * esc)), ch = Math.max(1, Math.round(h * esc));
+          var cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+          var cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, cw, ch);
+          cx.drawImage(img, 0, 0, cw, ch);
+          cv.toBlob(function (b) { URL.revokeObjectURL(url); resolve(b || file) }, "image/jpeg", 0.75);
+        } catch (e) { URL.revokeObjectURL(url); resolve(file) }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(file) };
+      img.src = url;
+    } catch (e) { resolve(file) }
+  });
+}
+async function subirFotoStock(blob, path) {
+  try {
+    var r = await fetch(SUPA_URL + "/storage/v1/object/stock/" + path, {
+      method: "POST",
+      headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY, "Content-Type": blob.type || "image/jpeg", "x-upsert": "true" },
+      body: blob
+    });
+    if (!r.ok) { console.error("Storage error:", await r.text()); return null }
+    return path;
+  } catch (e) { console.error("Storage error:", e); return null }
+}
+
+var stBtn = function (bg, col) { return { width: "100%", padding: "16px", borderRadius: 12, border: "none", cursor: "pointer", fontSize: 16, fontWeight: 600, fontFamily: ft, background: bg, color: col } };
+var stBtnGhost = { width: "100%", padding: "13px", borderRadius: 12, border: "1px solid " + grayBlue, cursor: "pointer", fontSize: 14, fontWeight: 500, fontFamily: ft, background: "transparent", color: grayWarm };
+var stField = { width: "100%", padding: "13px", borderRadius: 11, border: "1px solid " + grayBlue, fontSize: 16, fontFamily: ft, color: navy, background: white, boxSizing: "border-box" };
+var stLbl = { margin: "0 0 6px", fontSize: 11, letterSpacing: "1.2px", textTransform: "uppercase", color: grayWarm, fontWeight: 700, fontFamily: ft };
+var stChip = function (on) { return { padding: "8px 13px", borderRadius: 999, border: "1px solid " + (on ? navy : grayBlue), background: on ? navy : white, color: on ? cream : navy, fontSize: 13.5, fontFamily: ft, cursor: "pointer" } };
+
+function StockPanel(props) {
+  var quien = props.quien || "";
+  var _cats = useState([]), cats = _cats[0], setCats = _cats[1];
+  var _subs = useState([]), subs = _subs[0], setSubs = _subs[1];
+  var _prods = useState([]), prods = _prods[0], setProds = _prods[1];
+  var _fotos = useState([]), fotos = _fotos[0], setFotos = _fotos[1];
+  var _cargando = useState(true), cargando = _cargando[0], setCargando = _cargando[1];
+  var _pant = useState("inicio"), pant = _pant[0], setPant = _pant[1];
+  var _cat = useState(null), cat = _cat[0], setCat = _cat[1];
+  var _ultimo = useState(null), ultimo = _ultimo[0], setUltimo = _ultimo[1];
+  var _ficha = useState(null), ficha = _ficha[0], setFicha = _ficha[1];
+  var _busca = useState(""), busca = _busca[0], setBusca = _busca[1];
+  var _filtro = useState(null), filtro = _filtro[0], setFiltro = _filtro[1];
+  var _bienv = useState(false), bienv = _bienv[0], setBienv = _bienv[1];
+
+  var cargar = useCallback(async function () {
+    var res = await Promise.all([
+      supa("stock_categorias", "GET", "?order=orden"),
+      supa("stock_subcategorias", "GET", "?order=id"),
+      supa("stock_productos", "GET", "?estado=eq.activo&order=id.desc"),
+      supa("stock_fotos", "GET", "?order=orden")
+    ]);
+    setCats(res[0] || []); setSubs(res[1] || []); setProds(res[2] || []); setFotos(res[3] || []);
+    setCargando(false);
+  }, []);
+  useEffect(function () { cargar() }, [cargar]);
+  useEffect(function () {
+    try { if (!window.localStorage.getItem("ep_stock_bienv")) setBienv(true) } catch (e) {}
+  }, []);
+
+  function cerrarBienv() { try { window.localStorage.setItem("ep_stock_bienv", "1") } catch (e) {} setBienv(false) }
+  function catDe(id) { for (var i = 0; i < cats.length; i++) if (cats[i].id === id) return cats[i]; return null }
+  function fotosDe(pid) { return fotos.filter(function (f) { return f.producto_id === pid }) }
+  function portadaDe(pid) { var fs = fotosDe(pid); if (!fs.length) return null; var p = fs.filter(function (f) { return f.es_principal })[0]; return p || fs[0] }
+  function lugaresUsados() {
+    var out = []; prods.forEach(function (p) { if (p.lugar && out.indexOf(p.lugar) === -1) out.push(p.lugar) });
+    return out.slice(0, 6);
+  }
+
+  if (cargando) return <div style={{ padding: 30, textAlign: "center", fontFamily: ft, color: grayWarm }}>Cargando el stock…</div>;
+
+  // ---------- BIENVENIDA ----------
+  if (bienv) {
+    return (
+      <div style={{ padding: "22px 18px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 13, minHeight: "100%" }}>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 30, color: navy, lineHeight: 1.1 }}>Hola{quien ? " " + quien : ""}</p>
+        <p style={{ margin: 0, fontSize: 16, color: navy, lineHeight: 1.5 }}>Vamos a armar entre todas un archivo ordenado de todo lo que hay en el taller.</p>
+        <p style={{ margin: 0, fontSize: 16, color: navy, lineHeight: 1.5 }}>Es simple: sacás una foto de cada cosa, le pegás un número con cinta, y yo la guardo. Así después cualquiera encuentra lo que busca.</p>
+        <p style={{ margin: 0, fontSize: 16, color: navy, lineHeight: 1.5 }}>Empezá por donde quieras. Podés parar y seguir cuando quieras.</p>
+        <p style={{ margin: 0, fontSize: 16, color: navy, lineHeight: 1.5, fontWeight: 600 }}>Y no te preocupes por equivocarte: todo se puede editar después.</p>
+        <div style={{ flex: 1 }}></div>
+        <button onClick={cerrarBienv} style={stBtn(copper, white)}>Empezar</button>
+      </div>);
+  }
+
+  // ---------- INICIO: elegir tipo ----------
+  if (pant === "inicio") {
+    return (
+      <div style={{ padding: "16px 15px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 9 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+          <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Qué vas a cargar?</p>
+          <button onClick={function () { setFiltro(null); setBusca(""); setPant("galeria") }} style={{ padding: "7px 12px", borderRadius: 9, border: "1px solid " + grayBlue, background: white, color: navy, fontSize: 13, fontFamily: ft, cursor: "pointer", fontWeight: 600 }}>Buscar</button>
+        </div>
+        {cats.filter(function (c) { return c.activa }).map(function (c) {
+          var n = prods.filter(function (p) { return p.categoria_id === c.id }).length;
+          return (
+            <button key={c.id} onClick={function () { setCat(c); setPant("intro") }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: white, border: "1px solid " + grayBlue, borderRadius: 12, padding: "14px 14px", cursor: "pointer", fontFamily: ft, textAlign: "left" }}>
+              <span style={{ fontSize: 16.5, fontWeight: 600, color: navy }}>{capStock(c.nombre)}</span>
+              <span style={{ fontSize: 12.5, color: grayWarm }}>{n === 0 ? "ninguno todavía" : n + (n === 1 ? " cargado" : " cargados")}</span>
+            </button>);
+        })}
+        <NuevaCategoriaStock cats={cats} onCreada={cargar} />
+        <button onClick={function () { setBienv(true) }} style={{ background: "none", border: "none", color: grayWarm, fontSize: 13, fontFamily: ft, cursor: "pointer", marginTop: 6, textDecoration: "underline" }}>Volver a ver la explicación</button>
+      </div>);
+  }
+
+  // ---------- INTRO de la categoría ----------
+  if (pant === "intro" && cat) {
+    var yaCargados = prods.filter(function (p) { return p.categoria_id === cat.id }).length;
+    return (
+      <div style={{ padding: "16px 16px 22px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 12, minHeight: "100%" }}>
+        <button onClick={function () { setCat(null); setPant("inicio") }} style={{ background: "none", border: "none", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer", padding: 0, textAlign: "left" }}>← Volver</button>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 28, color: navy, lineHeight: 1.1 }}>{capStock(cat.nombre)}</p>
+        {(cat.instruccion || "").split("\n").map(function (linea, i) {
+          return <p key={i} style={{ margin: 0, fontSize: 15.5, color: "#4A5663", lineHeight: 1.5 }}>{linea}</p>;
+        })}
+        <div style={{ flex: 1, minHeight: 10 }}></div>
+        <button onClick={function () { setPant("alta") }} style={stBtn(copper, white)}>Sacar la primera foto</button>
+        {yaCargados > 0 ? <button onClick={function () { setFiltro(cat.id); setBusca(""); setPant("galeria") }} style={stBtnGhost}>Ver los {yaCargados} que ya cargué</button> : null}
+      </div>);
+  }
+
+  // ---------- ALTA ----------
+  if (pant === "alta" && cat) {
+    return <StockAlta cat={cat} subs={subs.filter(function (s) { return s.categoria_id === cat.id && s.activa })}
+      lugares={lugaresUsados()} quien={quien}
+      onCancelar={function () { setPant("intro") }}
+      onGuardado={async function (prod) { await cargar(); setUltimo(prod); setPant("ok") }}
+      onSubCreada={cargar} />;
+  }
+
+  // ---------- OK con el número ----------
+  if (pant === "ok" && ultimo && cat) {
+    var etiq = etiquetasStock(cat, ultimo);
+    return (
+      <div style={{ background: navy, minHeight: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "26px 20px", fontFamily: ft }}>
+        <p style={{ margin: 0, fontSize: 13, letterSpacing: "1.6px", textTransform: "uppercase", color: gold, fontWeight: 700 }}>✓ Guardado</p>
+        <p style={{ margin: "12px 0 0", fontSize: 15, color: grayBlue }}>Este es el</p>
+        <p style={{ margin: "2px 0 0", fontSize: 21, color: cream, fontWeight: 600 }}>{cat.singular} N°</p>
+        <p style={{ margin: "2px 0 0", fontFamily: "'Instrument Serif',serif", fontSize: 104, lineHeight: 0.95, color: copper }}>{ultimo.numero}</p>
+        <div style={{ marginTop: 16, padding: "13px 15px", border: "1px dashed " + gold, borderRadius: 11, background: "rgba(208,180,143,0.12)", color: cream, fontSize: 15, lineHeight: 1.45 }}>
+          {etiq.length === 1
+            ? <span>Pegale una etiqueta con<br /><b style={{ fontSize: 19 }}>{etiq[0]}</b></span>
+            : <span>Son {etiq.length}. Pegá una etiqueta en cada uno:<br /><b style={{ fontSize: 17, lineHeight: 1.6 }}>{etiq.join(" · ")}</b></span>}
+        </div>
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 9, marginTop: 24 }}>
+          <button onClick={function () { setUltimo(null); setPant("alta") }} style={stBtn(copper, white)}>Cargar otro</button>
+          <button onClick={function () { setUltimo(null); setCat(null); setPant("inicio") }} style={{ width: "100%", padding: "13px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.25)", cursor: "pointer", fontSize: 14, fontFamily: ft, background: "transparent", color: grayBlue }}>Terminé por hoy</button>
+        </div>
+      </div>);
+  }
+
+  // ---------- FICHA ----------
+  if (pant === "ficha" && ficha) {
+    return <StockFicha prod={ficha} cat={catDe(ficha.categoria_id)} fotos={fotosDe(ficha.id)}
+      subs={subs.filter(function (s) { return s.categoria_id === ficha.categoria_id })}
+      onVolver={function () { setFicha(null); setPant("galeria") }}
+      onCambio={async function () { await cargar(); setFicha(null); setPant("galeria") }} />;
+  }
+
+  // ---------- GALERÍA ----------
+  var lista = prods.filter(function (p) {
+    if (filtro && p.categoria_id !== filtro) return false;
+    var q = busca.trim().toLowerCase();
+    if (!q) return true;
+    var c = catDe(p.categoria_id);
+    var txt = [p.nombre || "", p.descripcion || "", p.lugar || "", String(p.numero), c ? c.nombre : "", c ? c.singular + " " + p.numero : ""].join(" ").toLowerCase();
+    return txt.indexOf(q) !== -1;
+  });
+  return (
+    <div style={{ padding: "14px 14px 22px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button onClick={function () { setPant("inicio") }} style={{ background: "none", border: "none", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer", padding: 0 }}>← Volver</button>
+      </div>
+      <input value={busca} onChange={function (e) { setBusca(e.target.value) }} placeholder="Buscar: número, nombre, lugar…" style={stField} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <button onClick={function () { setFiltro(null) }} style={stChip(!filtro)}>Todo</button>
+        {cats.filter(function (c) { return c.activa }).map(function (c) {
+          return <button key={c.id} onClick={function () { setFiltro(c.id) }} style={stChip(filtro === c.id)}>{capStock(c.nombre)}</button>;
+        })}
+      </div>
+      {lista.length === 0 ? <p style={{ color: grayWarm, fontSize: 15, textAlign: "center", padding: "24px 0", margin: 0 }}>No hay nada cargado todavía acá.</p> : null}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+        {lista.map(function (p) {
+          var c = catDe(p.categoria_id); var f = portadaDe(p.id);
+          return (
+            <button key={p.id} onClick={function () { setFicha(p); setPant("ficha") }} style={{ background: white, border: "1px solid " + grayBlue, borderRadius: 11, overflow: "hidden", padding: 0, cursor: "pointer", textAlign: "left", fontFamily: ft }}>
+              <div style={{ position: "relative", height: 108, background: cream }}>
+                {f ? <img src={fotoUrlStock(f.path)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : null}
+                <span style={{ position: "absolute", top: 6, left: 6, background: "rgba(19,36,53,0.86)", color: cream, fontSize: 10.5, fontWeight: 700, padding: "3px 7px", borderRadius: 6 }}>{c ? c.singular + " " + p.numero : p.numero}</span>
+              </div>
+              <div style={{ padding: "7px 8px 9px" }}>
+                <b style={{ display: "block", fontSize: 13, fontWeight: 600, color: navy, lineHeight: 1.25 }}>{p.nombre || (p.descripcion || "").slice(0, 30) || "Sin nombre"}</b>
+                <span style={{ fontSize: 11, color: grayWarm }}>{fmtCantStock(p.cantidad)} {p.unidad}{p.lugar ? " · " + p.lugar : ""}</span>
+              </div>
+            </button>);
+        })}
+      </div>
+    </div>);
+}
+
+function NuevaCategoriaStock(props) {
+  var _abierto = useState(false), abierto = _abierto[0], setAbierto = _abierto[1];
+  var _n = useState(""), n = _n[0], setN = _n[1];
+  var _sg = useState(""), sg = _sg[0], setSg = _sg[1];
+  var _guard = useState(false), guard = _guard[0], setGuard = _guard[1];
+  async function crear() {
+    var nom = n.trim(); if (!nom) return;
+    setGuard(true);
+    var maxOrden = 0; props.cats.forEach(function (c) { if (c.orden > maxOrden) maxOrden = c.orden });
+    await supa("stock_categorias", "POST", "", { nombre: nom, singular: (sg.trim() || nom), orden: maxOrden + 1 });
+    setGuard(false); setN(""); setSg(""); setAbierto(false);
+    if (props.onCreada) props.onCreada();
+  }
+  if (!abierto) return <button onClick={function () { setAbierto(true) }} style={{ width: "100%", padding: "13px", borderRadius: 12, border: "1px dashed " + grayBlue, background: "transparent", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer" }}>+ Agregar otro tipo de cosa</button>;
+  return (
+    <div style={{ background: white, border: "1px solid " + grayBlue, borderRadius: 12, padding: 13, display: "flex", flexDirection: "column", gap: 9 }}>
+      <p style={stLbl}>¿Qué tipo de cosa querés agregar?</p>
+      <input value={n} onChange={function (e) { setN(e.target.value) }} placeholder="Por ejemplo: cajas, repuestos" style={stField} />
+      <p style={stLbl}>¿Cómo se dice de a una?</p>
+      <input value={sg} onChange={function (e) { setSg(e.target.value) }} placeholder="Por ejemplo: caja, repuesto" style={stField} />
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={crear} disabled={guard || !n.trim()} style={Object.assign({}, stBtn(copper, white), { padding: "12px", fontSize: 15, opacity: guard || !n.trim() ? 0.5 : 1 })}>{guard ? "Guardando…" : "Guardar"}</button>
+        <button onClick={function () { setAbierto(false); setN(""); setSg("") }} style={stBtnGhost}>Cancelar</button>
+      </div>
+    </div>);
+}
+
+function StockAlta(props) {
+  var cat = props.cat, subs = props.subs, lugares = props.lugares;
+  var _paso = useState(1), paso = _paso[0], setPaso = _paso[1];
+  var _imgs = useState([]), imgs = _imgs[0], setImgs = _imgs[1];
+  var _cant = useState(1), cant = _cant[0], setCant = _cant[1];
+  var _unidad = useState(cat.unidad_default || "unidades"), unidad = _unidad[0], setUnidad = _unidad[1];
+  var _lugar = useState(""), lugar = _lugar[0], setLugar = _lugar[1];
+  var _nombre = useState(""), nombre = _nombre[0], setNombre = _nombre[1];
+  var _desc = useState(""), desc = _desc[0], setDesc = _desc[1];
+  var _subId = useState(null), subId = _subId[0], setSubId = _subId[1];
+  var _nuevaSub = useState(""), nuevaSub = _nuevaSub[0], setNuevaSub = _nuevaSub[1];
+  var _addSub = useState(false), addSub = _addSub[0], setAddSub = _addSub[1];
+  var _guardando = useState(false), guardando = _guardando[0], setGuardando = _guardando[1];
+  var _error = useState(""), error = _error[0], setError = _error[1];
+  var fileRef = useRef(null);
+
+  var UNIDADES = ["unidades", "kilos", "bolsas", "baldes"];
+  var cabecera = <p style={Object.assign({}, stLbl, { margin: 0 })}>{cat.singular} nuevo · paso {paso} de 4</p>;
+
+  async function elegirFoto(e) {
+    var fs = e.target.files; if (!fs || !fs.length) return;
+    setError("");
+    var nuevos = [];
+    for (var i = 0; i < fs.length; i++) {
+      var b = await comprimirFotoStock(fs[i]);
+      nuevos.push({ blob: b, url: URL.createObjectURL(b) });
+    }
+    setImgs(function (prev) { return prev.concat(nuevos) });
+    if (fileRef.current) fileRef.current.value = "";
+  }
+  function quitarFoto(i) {
+    setImgs(function (prev) { var c = prev.slice(); try { URL.revokeObjectURL(c[i].url) } catch (e) {} c.splice(i, 1); return c });
+  }
+  async function crearSub() {
+    var nom = nuevaSub.trim(); if (!nom) return;
+    var r = await supa("stock_subcategorias", "POST", "", { categoria_id: cat.id, nombre: nom });
+    if (r && r[0]) { setSubId(r[0].id); if (props.onSubCreada) props.onSubCreada() }
+    setNuevaSub(""); setAddSub(false);
+  }
+  async function guardar() {
+    if (!imgs.length) { setError("Falta la foto."); setPaso(1); return }
+    setGuardando(true); setError("");
+    var carpeta = "p" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+    var paths = [];
+    for (var i = 0; i < imgs.length; i++) {
+      var p = await subirFotoStock(imgs[i].blob, carpeta + "/" + (i + 1) + ".jpg");
+      if (!p) { setGuardando(false); setError("No se pudo subir la foto. Fijate que tengas señal y probá de nuevo."); return }
+      paths.push(p);
+    }
+    var body = {
+      categoria_id: cat.id, nombre: nombre.trim() || null, descripcion: desc.trim() || null,
+      lugar: lugar.trim() || null, cantidad: cant, unidad: unidad,
+      subcategoria_id: subId, creado_por: props.quien || null
+    };
+    var r = await supa("stock_productos", "POST", "", body);
+    if (!r || !r[0]) { setGuardando(false); setError("No se pudo guardar. Probá de nuevo."); return }
+    var prod = r[0];
+    for (var j = 0; j < paths.length; j++) {
+      await supa("stock_fotos", "POST", "", { producto_id: prod.id, path: paths[j], es_principal: j === 0, orden: j });
+    }
+    setGuardando(false);
+    props.onGuardado(prod);
+  }
+
+  var wrap = { padding: "16px 16px 22px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 12, minHeight: "100%" };
+
+  if (paso === 1) {
+    return (
+      <div style={wrap}>
+        {cabecera}
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>{imgs.length ? "¿Salió bien la foto?" : "Sacale una foto"}</p>
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple onChange={elegirFoto} style={{ display: "none" }} />
+        {imgs.length === 0
+          ? <button onClick={function () { fileRef.current && fileRef.current.click() }} style={Object.assign({}, stBtn(copper, white), { padding: "22px" })}>📷 Abrir la cámara</button>
+          : (<>
+            <div style={{ display: "grid", gridTemplateColumns: imgs.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
+              {imgs.map(function (im, i) {
+                return (
+                  <div key={i} style={{ position: "relative" }}>
+                    <img src={im.url} alt="" style={{ width: "100%", height: imgs.length > 1 ? 110 : 190, objectFit: "cover", borderRadius: 12, display: "block" }} />
+                    <button onClick={function () { quitarFoto(i) }} style={{ position: "absolute", top: 6, right: 6, background: "rgba(19,36,53,0.85)", color: cream, border: "none", borderRadius: 8, padding: "4px 9px", fontSize: 12, cursor: "pointer", fontFamily: ft }}>Borrar</button>
+                  </div>);
+              })}
+            </div>
+            <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>Si salió movida u oscura, borrala y sacala de nuevo.</p>
+            <button onClick={function () { fileRef.current && fileRef.current.click() }} style={stBtnGhost}>+ Agregar otra foto</button>
+          </>)}
+        {error ? <p style={{ margin: 0, color: "#b4451f", fontSize: 14 }}>{error}</p> : null}
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        {imgs.length ? <button onClick={function () { setPaso(2) }} style={stBtn(copper, white)}>Está bien, seguir</button> : null}
+        <button onClick={props.onCancelar} style={stBtnGhost}>← Volver</button>
+      </div>);
+  }
+
+  if (paso === 2) {
+    return (
+      <div style={wrap}>
+        {cabecera}
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Cuántos hay?</p>
+        <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>{cat.usa_letras ? "De esto mismo, iguales. Le voy a dar una letra a cada uno." : "Si no sabés exacto, calculá a ojo."}</p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: white, border: "1px solid " + grayBlue, borderRadius: 14, padding: "11px 13px" }}>
+          <button onClick={function () { setCant(function (c) { return Math.max(0, Math.round((c - (cat.usa_letras ? 1 : 0.5)) * 100) / 100) }) }} style={{ width: 54, height: 54, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 27, cursor: "pointer", fontFamily: ft }}>−</button>
+          <span style={{ fontFamily: "'Instrument Serif',serif", fontSize: 42, color: navy }}>{fmtCantStock(cant)}</span>
+          <button onClick={function () { setCant(function (c) { return Math.round((c + (cat.usa_letras ? 1 : 0.5)) * 100) / 100 }) }} style={{ width: 54, height: 54, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 27, cursor: "pointer", fontFamily: ft }}>+</button>
+        </div>
+        {!cat.usa_letras ? (<>
+          <p style={stLbl}>¿En qué se mide?</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {UNIDADES.map(function (u) { return <button key={u} onClick={function () { setUnidad(u) }} style={stChip(unidad === u)}>{u}</button> })}
+          </div>
+        </>) : null}
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        <button onClick={function () { setPaso(3) }} style={stBtn(copper, white)}>Seguir</button>
+        <button onClick={function () { setPaso(1) }} style={stBtnGhost}>← Volver</button>
+      </div>);
+  }
+
+  if (paso === 3) {
+    return (
+      <div style={wrap}>
+        {cabecera}
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Dónde está guardado?</p>
+        <input value={lugar} onChange={function (e) { setLugar(e.target.value) }} placeholder="Escribí acá…" style={stField} />
+        {lugares.length ? (<>
+          <p style={stLbl}>O tocá uno que ya usaste</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {lugares.map(function (l) { return <button key={l} onClick={function () { setLugar(l) }} style={stChip(lugar === l)}>{l}</button> })}
+          </div>
+        </>) : null}
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        <button onClick={function () { setPaso(4) }} style={stBtn(copper, white)}>Seguir</button>
+        <button onClick={function () { setPaso(2) }} style={stBtnGhost}>← Volver</button>
+      </div>);
+  }
+
+  return (
+    <div style={wrap}>
+      {cabecera}
+      <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Querés agregar algo más?</p>
+      <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>Esto es opcional. Si no querés, tocá "Saltear y guardar".</p>
+      <p style={stLbl}>¿Qué es?</p>
+      <input value={nombre} onChange={function (e) { setNombre(e.target.value) }} placeholder="Por ejemplo: taza cónica chica" style={stField} />
+      <p style={stLbl}>Contá lo que quieras</p>
+      <textarea value={desc} onChange={function (e) { setDesc(e.target.value) }} placeholder="Color, tamaño, estado, para qué sirve…" style={Object.assign({}, stField, { minHeight: 68, resize: "vertical" })} />
+      <p style={stLbl}>¿Es de algún tipo especial?</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {subs.map(function (s) { return <button key={s.id} onClick={function () { setSubId(subId === s.id ? null : s.id) }} style={stChip(subId === s.id)}>{s.nombre}</button> })}
+        {!addSub ? <button onClick={function () { setAddSub(true) }} style={Object.assign({}, stChip(false), { borderStyle: "dashed", color: grayWarm })}>+ nuevo</button> : null}
+      </div>
+      {addSub ? (
+        <div style={{ display: "flex", gap: 7 }}>
+          <input value={nuevaSub} onChange={function (e) { setNuevaSub(e.target.value) }} placeholder="Nombre nuevo" style={stField} />
+          <button onClick={crearSub} style={{ padding: "0 16px", borderRadius: 11, border: "none", background: navy, color: cream, fontFamily: ft, fontSize: 14, cursor: "pointer" }}>Sumar</button>
+        </div>) : null}
+      {error ? <p style={{ margin: 0, color: "#b4451f", fontSize: 14 }}>{error}</p> : null}
+      <div style={{ flex: 1, minHeight: 8 }}></div>
+      <button onClick={guardar} disabled={guardando} style={Object.assign({}, stBtn(copper, white), { opacity: guardando ? 0.6 : 1 })}>{guardando ? "Guardando…" : "Guardar"}</button>
+      {!guardando ? <button onClick={guardar} style={stBtnGhost}>Saltear y guardar</button> : null}
+      {!guardando ? <button onClick={function () { setPaso(3) }} style={stBtnGhost}>← Volver</button> : null}
+    </div>);
+}
+
+function StockFicha(props) {
+  var prod = props.prod, cat = props.cat, fotos = props.fotos, subs = props.subs;
+  var _edit = useState(false), edit = _edit[0], setEdit = _edit[1];
+  var _cant = useState(numStock(prod.cantidad)), cant = _cant[0], setCant = _cant[1];
+  var _lugar = useState(prod.lugar || ""), lugar = _lugar[0], setLugar = _lugar[1];
+  var _nombre = useState(prod.nombre || ""), nombre = _nombre[0], setNombre = _nombre[1];
+  var _desc = useState(prod.descripcion || ""), desc = _desc[0], setDesc = _desc[1];
+  var _guard = useState(false), guard = _guard[0], setGuard = _guard[1];
+  var fileRef = useRef(null);
+  var sub = subs.filter(function (s) { return s.id === prod.subcategoria_id })[0];
+  var etiq = etiquetasStock(cat, prod);
+
+  async function guardar() {
+    setGuard(true);
+    await supa("stock_productos", "PATCH", "?id=eq." + prod.id, { nombre: nombre.trim() || null, descripcion: desc.trim() || null, lugar: lugar.trim() || null, cantidad: cant });
+    setGuard(false); props.onCambio();
+  }
+  async function archivar() {
+    if (!window.confirm("¿Sacar esto del inventario? No se borra: queda guardado y su número no se vuelve a usar.")) return;
+    setGuard(true);
+    await supa("stock_productos", "PATCH", "?id=eq." + prod.id, { estado: "archivado" });
+    setGuard(false); props.onCambio();
+  }
+  async function sumarFoto(e) {
+    var fs = e.target.files; if (!fs || !fs.length) return;
+    setGuard(true);
+    var carpeta = "p" + prod.id + "-extra";
+    for (var i = 0; i < fs.length; i++) {
+      var b = await comprimirFotoStock(fs[i]);
+      var path = await subirFotoStock(b, carpeta + "/" + Date.now() + "-" + i + ".jpg");
+      if (path) await supa("stock_fotos", "POST", "", { producto_id: prod.id, path: path, es_principal: false, orden: fotos.length + i + 1 });
+    }
+    setGuard(false); props.onCambio();
+  }
+
+  return (
+    <div style={{ padding: "14px 15px 24px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 11 }}>
+      <button onClick={props.onVolver} style={{ background: "none", border: "none", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer", padding: 0, textAlign: "left" }}>← Volver</button>
+      <div style={{ background: navy, borderRadius: 12, padding: "13px 15px" }}>
+        <p style={{ margin: 0, fontSize: 11, letterSpacing: "1.4px", textTransform: "uppercase", color: gold, fontWeight: 700 }}>La etiqueta dice</p>
+        <p style={{ margin: "4px 0 0", fontFamily: "'Instrument Serif',serif", fontSize: etiq.length > 3 ? 20 : 27, color: copper, lineHeight: 1.2 }}>{etiq.join(" · ")}</p>
+      </div>
+      {fotos.length ? (
+        <div style={{ display: "grid", gridTemplateColumns: fotos.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
+          {fotos.map(function (f) { return <img key={f.id} src={fotoUrlStock(f.path)} alt="" style={{ width: "100%", height: fotos.length > 1 ? 130 : 220, objectFit: "cover", borderRadius: 11, display: "block" }} /> })}
+        </div>) : null}
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple onChange={sumarFoto} style={{ display: "none" }} />
+      <button onClick={function () { fileRef.current && fileRef.current.click() }} style={stBtnGhost}>+ Agregar otra foto</button>
+      {!edit ? (<>
+        <p style={{ margin: 0, fontSize: 20, fontWeight: 600, color: navy }}>{prod.nombre || "Sin nombre"}</p>
+        <p style={{ margin: 0, fontSize: 15, color: "#4A5663" }}>{fmtCantStock(prod.cantidad)} {prod.unidad}{prod.lugar ? " · " + prod.lugar : ""}</p>
+        {sub ? <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>Tipo: {sub.nombre}</p> : null}
+        {prod.descripcion ? <p style={{ margin: 0, fontSize: 15, color: "#4A5663", lineHeight: 1.5 }}>{prod.descripcion}</p> : null}
+        <button onClick={function () { setEdit(true) }} style={stBtnGhost}>Corregir algo</button>
+        <button onClick={archivar} disabled={guard} style={{ background: "none", border: "none", color: "#b4451f", fontSize: 13.5, fontFamily: ft, cursor: "pointer", textDecoration: "underline", padding: "4px 0" }}>Sacar del inventario</button>
+      </>) : (<>
+        <p style={stLbl}>¿Qué es?</p>
+        <input value={nombre} onChange={function (e) { setNombre(e.target.value) }} style={stField} />
+        <p style={stLbl}>Cuántos hay</p>
+        <input value={cant} onChange={function (e) { setCant(numStock(e.target.value.replace(",", "."))) }} inputMode="decimal" style={stField} />
+        <p style={stLbl}>Dónde está</p>
+        <input value={lugar} onChange={function (e) { setLugar(e.target.value) }} style={stField} />
+        <p style={stLbl}>Descripción</p>
+        <textarea value={desc} onChange={function (e) { setDesc(e.target.value) }} style={Object.assign({}, stField, { minHeight: 68, resize: "vertical" })} />
+        <button onClick={guardar} disabled={guard} style={Object.assign({}, stBtn(copper, white), { opacity: guard ? 0.6 : 1 })}>{guard ? "Guardando…" : "Guardar cambios"}</button>
+        <button onClick={function () { setEdit(false) }} style={stBtnGhost}>Cancelar</button>
+      </>)}
+    </div>);
+}
+
 // ====== PROFESORA VIEW ======
 function ProfeView(props) {
   var profe = props.profe, als = props.als, refreshData = props.refreshData, listas = props.listas;
   var isEncargada = profe.esEncargada;
+  var puedeStock = !!profe.puedeStock;
   var defaultTab = isEncargada ? "lista" : "clases";
   var _tab = useState(defaultTab), tab = _tab[0], setTab = _tab[1];
   return (
@@ -599,12 +1082,14 @@ function ProfeView(props) {
         <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>Lista</button>
         {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>Sede</button> : null}
         {isEncargada ? <button onClick={function () { setTab("finanzas") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "finanzas" ? white : cream, color: tab === "finanzas" ? navy : grayWarm, borderBottom: tab === "finanzas" ? "2px solid " + copper : "2px solid transparent" }}>Finanzas</button> : null}
+        {puedeStock ? <button onClick={function () { setTab("stock") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "stock" ? white : cream, color: tab === "stock" ? navy : grayWarm, borderBottom: tab === "stock" ? "2px solid " + copper : "2px solid transparent" }}>Stock</button> : null}
       </div>
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
         {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
         {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
         {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
+        {tab === "stock" && puedeStock ? <StockPanel quien={profe.nombre} /> : null}
       </div></div>);
 }
 
@@ -1522,6 +2007,7 @@ function AppArgentina() {
             <button onClick={function () { setAdminView("sede"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "sede")}>Palermo</button>
             <button onClick={function () { setAdminView("alumna"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "alumna")}>Alumna</button>
             <button onClick={function () { setAdminView("profe"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "profe")}>Profe</button>
+            <button onClick={function () { setAdminView("stock"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "stock")}>Stock</button>
             <button onClick={function () { setAdminAuth(false); setAdminView("chat"); setLogged(null); setLoggedProfe(null) }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: "#fca5a5", marginLeft: 4 }}>Salir</button>
           </>) : route === "alumna" && logged ? (<button onClick={function () { setLogged(null); saveSession(null); setTab("cal") }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: grayBlue }}>Salir</button>
           ) : route === "profesora" && loggedProfe ? (<button onClick={function () { setLoggedProfe(null) }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: grayBlue }}>Salir</button>) : null}
@@ -1543,6 +2029,8 @@ function AppArgentina() {
                 </div></div>)
           ) : adminView === "sede" ? (
             <div style={{ flex: 1, overflow: "auto", background: white }}><EncargadaVista profe={{ nombre: "Admin", sede: "Palermo", sedeEncargada: "Palermo", esEncargada: true }} als={als} refreshData={refreshData} /></div>
+          ) : adminView === "stock" ? (
+            <div style={{ flex: 1, overflow: "auto", background: white }}><StockPanel quien="" /></div>
           ) : adminView === "profe" ? (
             !loggedProfe ? <GenericLogin table="profesoras" onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); setLoggedProfe(p || row) }} subtitle="Seleccioná profesora" skipPw={true} refreshData={refreshData} />
             : curProfe ? <ProfeView profe={curProfe} als={als} refreshData={refreshData} listas={listas} /> : null
