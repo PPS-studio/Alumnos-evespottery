@@ -932,7 +932,7 @@ function StockAlta(props) {
       <div style={wrap}>
         {cabecera}
         <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Cuántos hay?</p>
-        <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>{cat.usa_letras ? "De esto mismo, iguales. Le voy a dar una letra a cada uno." : "Si no sabés exacto, calculá a ojo."}</p>
+        <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>{cat.usa_letras ? "De esto mismo, iguales. Te voy a dar una letra para cada uno." : "Si no sabés exacto, calculá a ojo."}</p>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: white, border: "1px solid " + grayBlue, borderRadius: 14, padding: "11px 13px" }}>
           <button onClick={function () { setCant(function (c) { return Math.max(0, Math.round((c - (cat.usa_letras ? 1 : 0.5)) * 100) / 100) }) }} style={{ width: 54, height: 54, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 27, cursor: "pointer", fontFamily: ft }}>−</button>
           <span style={{ fontFamily: "'Instrument Serif',serif", fontSize: 42, color: navy }}>{fmtCantStock(cant)}</span>
