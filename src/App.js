@@ -130,7 +130,7 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
   var sede = sedes.length > 0 ? sedes[0] : "Palermo";
-  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false }
+  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false, tomaLista: row.toma_lista !== false }
 }
 function getMonthStats(al, mk) {
   var p = mk.split("-").map(Number);
@@ -1070,7 +1070,8 @@ function ProfeView(props) {
   var profe = props.profe, als = props.als, refreshData = props.refreshData, listas = props.listas;
   var isEncargada = profe.esEncargada;
   var puedeStock = !!profe.puedeStock;
-  var defaultTab = isEncargada ? "lista" : "clases";
+  var tomaLista = profe.tomaLista !== false;
+  var defaultTab = tomaLista ? (isEncargada ? "lista" : "clases") : (isEncargada ? "sede" : "clases");
   var _tab = useState(defaultTab), tab = _tab[0], setTab = _tab[1];
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1079,14 +1080,14 @@ function ProfeView(props) {
         <p style={{ margin: 0, color: grayWarm, fontSize: 12, fontFamily: ft }}>{profe.sede}</p></div>
       <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue }}>
         {!isEncargada ? <button onClick={function () { setTab("clases") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "clases" ? white : cream, color: tab === "clases" ? navy : grayWarm, borderBottom: tab === "clases" ? "2px solid " + copper : "2px solid transparent" }}>Mis clases</button> : null}
-        <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>Lista</button>
+        {tomaLista ? <button onClick={function () { setTab("lista") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "lista" ? white : cream, color: tab === "lista" ? navy : grayWarm, borderBottom: tab === "lista" ? "2px solid " + copper : "2px solid transparent" }}>Lista</button> : null}
         {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>Sede</button> : null}
         {isEncargada ? <button onClick={function () { setTab("finanzas") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "finanzas" ? white : cream, color: tab === "finanzas" ? navy : grayWarm, borderBottom: tab === "finanzas" ? "2px solid " + copper : "2px solid transparent" }}>Finanzas</button> : null}
         {puedeStock ? <button onClick={function () { setTab("stock") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "stock" ? white : cream, color: tab === "stock" ? navy : grayWarm, borderBottom: tab === "stock" ? "2px solid " + copper : "2px solid transparent" }}>Stock</button> : null}
       </div>
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
-        {tab === "lista" ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
+        {tab === "lista" && tomaLista ? <ProfeLista profe={profe} als={als} refreshData={refreshData} listas={listas} /> : null}
         {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
         {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
         {tab === "stock" && puedeStock ? <StockPanel quien={profe.nombre} /> : null}
