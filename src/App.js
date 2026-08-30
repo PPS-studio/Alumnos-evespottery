@@ -130,7 +130,7 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
   var sede = sedes.length > 0 ? sedes[0] : "Palermo";
-  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false, tomaLista: row.toma_lista !== false }
+  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false, tomaLista: row.toma_lista !== false, puedeProduccion: row.puede_produccion || false, veResultados: row.ve_resultados || false }
 }
 function getMonthStats(al, mk) {
   var p = mk.split("-").map(Number);
@@ -1065,13 +1065,454 @@ function StockFicha(props) {
     </div>);
 }
 
+// ====== PRODUCCIÓN: TANDAS Y MERMAS ======
+var PASOS_PROD = ["", "Colada", "Desmolde", "Secado", "Horno de bizcocho", "Esmaltado", "Horno de esmalte", "Logo", "Horno del logo"];
+var PREG_PROD = ["", "",
+  "De las {n}, ¿cuántas salieron enteras del molde?",
+  "De las {n}, ¿cuántas siguen enteras después de secar?",
+  "De las {n}, ¿cuántas salieron enteras del horno?",
+  "De las {n}, ¿cuántas siguen enteras después de esmaltar?",
+  "De las {n}, ¿cuántas salieron enteras del horno?",
+  "De las {n}, ¿cuántas siguen enteras después del logo?",
+  "De las {n}, ¿cuántas salieron enteras del horno?"];
+var ESPERA_PROD = ["", "", "Todavía no desmoldé", "Siguen secando", "Todavía está en el horno", "Todavía no las esmalté", "Todavía está en el horno", "Todavía no le puse el logo", "Todavía está en el horno"];
+var GRUPO_PROD = ["no sé", "colada", "desmolde", "secado", "hornos", "esmaltado", "hornos", "logo", "hornos"];
+var breakRed = "#9C3B22";
+
+function pasoNombreProd(p) { return p === 0 ? "no sé" : (PASOS_PROD[p] || "") }
+function tandaTituloProd(t, prodPorId) {
+  if (t.origen === "colada" && t.molde_producto_id) { var m = prodPorId[t.molde_producto_id]; if (m) return "Molde " + m.numero + (m.nombre ? " · " + m.nombre : "") }
+  if (t.origen === "taller" && t.pieza_producto_id) { var b = prodPorId[t.pieza_producto_id]; if (b) return (b.nombre || "Bizcocho " + b.numero) }
+  return t.descripcion || "Tanda " + t.id;
+}
+function tandaOrigenProd(t) { return t.origen === "colada" ? "colada nuestra" : t.origen === "comprado" ? "comprados" : "del taller" }
+
+function ProduccionPanel(props) {
+  var quien = props.quien || "", veResultados = !!props.veResultados;
+  var _tandas = useState([]), tandas = _tandas[0], setTandas = _tandas[1];
+  var _mermas = useState([]), mermas = _mermas[0], setMermas = _mermas[1];
+  var _prods = useState([]), prods = _prods[0], setProds = _prods[1];
+  var _cats = useState([]), cats = _cats[0], setCats = _cats[1];
+  var _cargando = useState(true), cargando = _cargando[0], setCargando = _cargando[1];
+  var _pant = useState("inicio"), pant = _pant[0], setPant = _pant[1];
+  var _sel = useState(null), sel = _sel[0], setSel = _sel[1];
+
+  var cargar = useCallback(async function () {
+    var r = await Promise.all([
+      supa("produccion_tandas", "GET", "?order=created_at.desc"),
+      supa("produccion_mermas", "GET", "?order=created_at.desc"),
+      supa("stock_productos", "GET", "?estado=eq.activo&order=numero"),
+      supa("stock_categorias", "GET", "?order=orden")
+    ]);
+    setTandas(r[0] || []); setMermas(r[1] || []); setProds(r[2] || []); setCats(r[3] || []);
+    setCargando(false);
+  }, []);
+  useEffect(function () { cargar() }, [cargar]);
+
+  if (cargando) return <div style={{ padding: 30, textAlign: "center", fontFamily: ft, color: grayWarm }}>Cargando…</div>;
+
+  var prodPorId = {}; prods.forEach(function (p) { prodPorId[p.id] = p });
+  var catPorId = {}; cats.forEach(function (c) { catPorId[c.id] = c });
+  function catNombre(n) { for (var i = 0; i < cats.length; i++) if (cats[i].nombre === n) return cats[i]; return null }
+  var catMolde = catNombre("molde"), catBarro = catNombre("barros"), catBizc = catNombre("bizcocho");
+  var moldes = catMolde ? prods.filter(function (p) { return p.categoria_id === catMolde.id }) : [];
+  var barros = catBarro ? prods.filter(function (p) { return p.categoria_id === catBarro.id }) : [];
+  var bizcochos = catBizc ? prods.filter(function (p) { return p.categoria_id === catBizc.id }) : [];
+  var abiertas = tandas.filter(function (t) { return t.estado === "abierta" });
+  var motivosPrevios = [];
+  mermas.forEach(function (m) { var v = (m.motivo || "").trim(); if (v && motivosPrevios.indexOf(v) === -1) motivosPrevios.push(v) });
+  motivosPrevios = motivosPrevios.slice(0, 6);
+
+  if (pant === "nueva") {
+    return <TandaNueva moldes={moldes} barros={barros} bizcochos={bizcochos} quien={quien}
+      onCancelar={function () { setPant("inicio") }}
+      onGuardada={async function () { await cargar(); setPant("inicio") }} />;
+  }
+  if (pant === "actualizar" && sel) {
+    var t = tandas.filter(function (x) { return x.id === sel.id })[0] || sel;
+    return <TandaActualizar tanda={t} molde={t.molde_producto_id ? prodPorId[t.molde_producto_id] : null}
+      titulo={tandaTituloProd(t, prodPorId)} motivosPrevios={motivosPrevios} quien={quien}
+      mermasDe={mermas.filter(function (m) { return m.tanda_id === t.id })}
+      onVolver={function () { setSel(null); setPant("inicio") }}
+      onListo={async function () { await cargar(); setSel(null); setPant("inicio") }} />;
+  }
+  if (pant === "resultados" && veResultados) {
+    return <ProdResultados tandas={tandas} mermas={mermas} prodPorId={prodPorId} onVolver={function () { setPant("inicio") }} />;
+  }
+
+  var terminadas = tandas.filter(function (t) { return t.estado === "terminada" }).slice(0, 6);
+  return (
+    <div style={{ padding: "15px 14px 24px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 10 }}>
+      <button onClick={function () { setPant("nueva") }} style={stBtn(copper, white)}>+ Empezar una tanda</button>
+      <p style={stLbl}>Esperando tu respuesta</p>
+      {abiertas.length === 0 ? <p style={{ color: grayWarm, fontSize: 14.5, margin: 0 }}>No hay nada esperando. Cuando empieces una tanda, va a aparecer acá.</p> : null}
+      {abiertas.map(function (t) {
+        return (
+          <button key={t.id} onClick={function () { setSel(t); setPant("actualizar") }} style={{ background: white, border: "1px solid " + grayBlue, borderLeft: "3px solid " + copper, borderRadius: 11, padding: "11px 12px", textAlign: "left", cursor: "pointer", fontFamily: ft }}>
+            <b style={{ display: "block", fontSize: 14.5, fontWeight: 600, color: navy, lineHeight: 1.3 }}>{tandaTituloProd(t, prodPorId)}</b>
+            <span style={{ fontSize: 11.5, color: grayWarm }}>paso {t.paso} de 8 · {PASOS_PROD[t.paso]} · {t.vivas} {t.vivas === 1 ? "pieza" : "piezas"}</span>
+          </button>);
+      })}
+      {veResultados && terminadas.length ? (<>
+        <p style={stLbl}>Terminadas</p>
+        {terminadas.map(function (t) {
+          var perdidas = t.cantidad_inicial - t.vivas;
+          return (
+            <div key={t.id} style={{ background: white, border: "1px solid " + grayBlue, borderRadius: 11, padding: "10px 12px" }}>
+              <b style={{ display: "block", fontSize: 14, fontWeight: 600, color: navy }}>{tandaTituloProd(t, prodPorId)}</b>
+              <span style={{ fontSize: 11.5, color: grayWarm }}>{t.cantidad_inicial} empezaron · {t.vivas} llegaron{perdidas ? " · se perdieron " + perdidas : " · sin roturas"}</span>
+            </div>);
+        })}
+      </>) : null}
+      {veResultados ? <button onClick={function () { setPant("resultados") }} style={stBtnGhost}>Ver resultados</button> : null}
+    </div>);
+}
+
+function TandaNueva(props) {
+  var _paso = useState("origen"), paso = _paso[0], setPaso = _paso[1];
+  var _origen = useState("colada"), origen = _origen[0], setOrigen = _origen[1];
+  var _molde = useState(null), molde = _molde[0], setMolde = _molde[1];
+  var _pieza = useState(null), pieza = _pieza[0], setPieza = _pieza[1];
+  var _barro = useState(null), barro = _barro[0], setBarro = _barro[1];
+  var _desc = useState(""), desc = _desc[0], setDesc = _desc[1];
+  var _cant = useState(1), cant = _cant[0], setCant = _cant[1];
+  var _mCarga = useState(null), mCarga = _mCarga[0], setMCarga = _mCarga[1];
+  var _mMolde = useState(null), mMolde = _mMolde[0], setMMolde = _mMolde[1];
+  var _busca = useState(""), busca = _busca[0], setBusca = _busca[1];
+  var _guard = useState(false), guard = _guard[0], setGuard = _guard[1];
+  var _err = useState(""), err = _err[0], setErr = _err[1];
+
+  var wrap = { padding: "16px 15px 24px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 11, minHeight: "100%" };
+  var CARGA = [3, 5, 8, 10, 15];
+  var MOLDE_MIN = [15, 25, 40, 60];
+
+  async function guardar() {
+    setGuard(true); setErr("");
+    var body = {
+      origen: origen, cantidad_inicial: cant, vivas: cant,
+      paso: origen === "colada" ? 2 : 5, creado_por: props.quien || null,
+      molde_producto_id: origen === "colada" && molde ? molde.id : null,
+      pieza_producto_id: origen === "taller" && pieza ? pieza.id : null,
+      barro_producto_id: origen === "colada" && barro ? barro.id : null,
+      descripcion: origen === "colada" ? null : (origen === "taller" && pieza ? null : desc.trim() || null),
+      minutos_carga: origen === "colada" ? mCarga : null,
+      minutos_molde: origen === "colada" ? mMolde : null
+    };
+    var r = await supa("produccion_tandas", "POST", "", body);
+    setGuard(false);
+    if (!r || !r[0]) { setErr("No se pudo guardar. Probá de nuevo."); return }
+    props.onGuardada();
+  }
+
+  if (paso === "origen") {
+    var OPC = [
+      { k: "colada", t: "Las colamos nosotras", s: "Empieza desde el molde · paso 1 de 8" },
+      { k: "comprado", t: "Son bizcochos comprados", s: "Ya vienen horneados · empieza en el paso 5" },
+      { k: "taller", t: "Ya estaban en el taller", s: "De los bizcochos que tenés cargados · paso 5" }
+    ];
+    return (
+      <div style={wrap}>
+        <p style={stLbl}>Tanda nueva</p>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿De dónde salen estas piezas?</p>
+        {OPC.map(function (o) {
+          var on = origen === o.k;
+          return (
+            <button key={o.k} onClick={function () { setOrigen(o.k) }} style={{ background: white, border: (on ? "2px solid " + copper : "1px solid " + grayBlue), borderRadius: 11, padding: "12px 13px", textAlign: "left", cursor: "pointer", fontFamily: ft }}>
+              <b style={{ display: "block", fontSize: 15, fontWeight: 600, color: navy }}>{o.t}</b>
+              <span style={{ fontSize: 11.5, color: grayWarm }}>{o.s}</span>
+            </button>);
+        })}
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        <button onClick={function () { setPaso(origen === "colada" ? "molde" : "piezas") }} style={stBtn(copper, white)}>Seguir</button>
+        <button onClick={props.onCancelar} style={stBtnGhost}>Cancelar</button>
+      </div>);
+  }
+
+  if (paso === "molde") {
+    var lista = props.moldes.filter(function (m) {
+      var q = busca.trim().toLowerCase(); if (!q) return true;
+      return ((m.nombre || "") + " " + m.numero).toLowerCase().indexOf(q) !== -1;
+    });
+    return (
+      <div style={wrap}>
+        <p style={stLbl}>Tanda nueva · las colamos nosotras</p>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Qué molde usaste?</p>
+        <input value={busca} onChange={function (e) { setBusca(e.target.value) }} placeholder="Buscar por número o nombre…" style={stField} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 260, overflow: "auto" }}>
+          {lista.map(function (m) {
+            var on = molde && molde.id === m.id;
+            return (
+              <button key={m.id} onClick={function () { setMolde(m); setCant(Math.max(1, Math.round(numStock(m.cantidad)))) }} style={{ background: white, border: (on ? "2px solid " + copper : "1px solid " + grayBlue), borderRadius: 11, padding: "10px 12px", textAlign: "left", cursor: "pointer", fontFamily: ft }}>
+                <b style={{ display: "block", fontSize: 14.5, fontWeight: 600, color: navy }}>Molde {m.numero} · {m.nombre || "sin nombre"}</b>
+                <span style={{ fontSize: 11.5, color: grayWarm }}>{fmtCantStock(m.cantidad)} disponibles{m.lugar ? " · " + m.lugar : ""}</span>
+              </button>);
+          })}
+        </div>
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        {molde ? <button onClick={function () { setPaso("cantidad") }} style={stBtn(copper, white)}>Seguir</button> : null}
+        <button onClick={function () { setPaso("origen") }} style={stBtnGhost}>← Volver</button>
+      </div>);
+  }
+
+  if (paso === "piezas") {
+    return (
+      <div style={wrap}>
+        <p style={stLbl}>Tanda nueva · {origen === "comprado" ? "bizcochos comprados" : "ya estaban en el taller"}</p>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Qué son y cuántos?</p>
+        {origen === "taller" && props.bizcochos.length ? (<>
+          <p style={stLbl}>Elegí de los bizcochos cargados</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 190, overflow: "auto" }}>
+            {props.bizcochos.map(function (b) {
+              var on = pieza && pieza.id === b.id;
+              return (
+                <button key={b.id} onClick={function () { setPieza(b) }} style={{ background: white, border: (on ? "2px solid " + copper : "1px solid " + grayBlue), borderRadius: 11, padding: "10px 12px", textAlign: "left", cursor: "pointer", fontFamily: ft }}>
+                  <b style={{ display: "block", fontSize: 14.5, fontWeight: 600, color: navy }}>Bizcocho {b.numero} · {b.nombre || "sin nombre"}</b>
+                  <span style={{ fontSize: 11.5, color: grayWarm }}>{fmtCantStock(b.cantidad)} en stock</span>
+                </button>);
+            })}
+          </div>
+        </>) : null}
+        {origen === "comprado" || !props.bizcochos.length ? (<>
+          <p style={stLbl}>¿Qué son?</p>
+          <input value={desc} onChange={function (e) { setDesc(e.target.value) }} placeholder="Por ejemplo: tazas cónicas chicas" style={stField} />
+        </>) : null}
+        <p style={stLbl}>¿Cuántas hay?</p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: white, border: "1px solid " + grayBlue, borderRadius: 14, padding: "10px 12px" }}>
+          <button onClick={function () { setCant(function (c) { return Math.max(1, c - 1) }) }} style={{ width: 52, height: 52, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 26, cursor: "pointer", fontFamily: ft }}>−</button>
+          <span style={{ fontFamily: "'Instrument Serif',serif", fontSize: 40, color: navy }}>{cant}</span>
+          <button onClick={function () { setCant(function (c) { return c + 1 }) }} style={{ width: 52, height: 52, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 26, cursor: "pointer", fontFamily: ft }}>+</button>
+        </div>
+        <p style={{ margin: 0, fontSize: 13, color: grayWarm }}>Estas ya vienen horneadas: no hace falta molde ni tiempos. Arrancan esperando esmalte.</p>
+        {err ? <p style={{ margin: 0, color: breakRed, fontSize: 14 }}>{err}</p> : null}
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        <button onClick={guardar} disabled={guard || (origen === "comprado" && !desc.trim()) || (origen === "taller" && !pieza && !desc.trim())} style={Object.assign({}, stBtn(copper, white), { opacity: guard ? 0.6 : 1 })}>{guard ? "Guardando…" : "Guardar tanda"}</button>
+        <button onClick={function () { setPaso("origen") }} style={stBtnGhost}>← Volver</button>
+      </div>);
+  }
+
+  if (paso === "cantidad") {
+    return (
+      <div style={wrap}>
+        <p style={stLbl}>Tanda nueva · Molde {molde ? molde.numero : ""}</p>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Cuántas colaste?</p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: white, border: "1px solid " + grayBlue, borderRadius: 14, padding: "10px 12px" }}>
+          <button onClick={function () { setCant(function (c) { return Math.max(1, c - 1) }) }} style={{ width: 52, height: 52, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 26, cursor: "pointer", fontFamily: ft }}>−</button>
+          <span style={{ fontFamily: "'Instrument Serif',serif", fontSize: 40, color: navy }}>{cant}</span>
+          <button onClick={function () { setCant(function (c) { return c + 1 }) }} style={{ width: 52, height: 52, borderRadius: 13, background: navy, color: cream, border: "none", fontSize: 26, cursor: "pointer", fontFamily: ft }}>+</button>
+        </div>
+        {props.barros.length ? (<>
+          <p style={stLbl}>¿Con qué barro?</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {props.barros.map(function (b) {
+              return <button key={b.id} onClick={function () { setBarro(barro && barro.id === b.id ? null : b) }} style={stChip(barro && barro.id === b.id)}>{b.nombre || "Barro " + b.numero}</button>;
+            })}
+          </div>
+        </>) : <p style={{ margin: 0, fontSize: 13, color: grayWarm }}>Todavía no hay barros cargados en el Stock. Podés seguir igual.</p>}
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        <button onClick={function () { setPaso("tiempos") }} style={stBtn(copper, white)}>Seguir</button>
+        <button onClick={function () { setPaso("molde") }} style={stBtnGhost}>← Volver</button>
+      </div>);
+  }
+
+  return (
+    <div style={wrap}>
+      <p style={stLbl}>Tanda nueva · Molde {molde ? molde.numero : ""}</p>
+      <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy }}>¿Cuánto tiempo?</p>
+      <p style={stLbl}>Cargada con barbotina</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {CARGA.map(function (m) { return <button key={m} onClick={function () { setMCarga(mCarga === m ? null : m) }} style={stChip(mCarga === m)}>{m} min</button> })}
+      </div>
+      <p style={stLbl}>En el molde antes de desmoldar</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {MOLDE_MIN.map(function (m) { return <button key={m} onClick={function () { setMMolde(mMolde === m ? null : m) }} style={stChip(mMolde === m)}>{m >= 60 ? (m / 60) + " h" : m + " min"}</button> })}
+      </div>
+      <p style={{ margin: 0, fontSize: 13, color: grayWarm }}>Si no te acordás exacto, poné lo más parecido. Sirve igual. Y si no sabés, dejalo vacío.</p>
+      {err ? <p style={{ margin: 0, color: breakRed, fontSize: 14 }}>{err}</p> : null}
+      <div style={{ flex: 1, minHeight: 8 }}></div>
+      <button onClick={guardar} disabled={guard} style={Object.assign({}, stBtn(copper, white), { opacity: guard ? 0.6 : 1 })}>{guard ? "Guardando…" : "Guardar tanda"}</button>
+      <button onClick={function () { setPaso("cantidad") }} style={stBtnGhost}>← Volver</button>
+    </div>);
+}
+
+function TandaActualizar(props) {
+  var t = props.tanda, molde = props.molde;
+  var _enteras = useState(t.vivas), enteras = _enteras[0], setEnteras = _enteras[1];
+  var _fase = useState("contar"), fase = _fase[0], setFase = _fase[1];
+  var _letras = useState([]), letras = _letras[0], setLetras = _letras[1];
+  var _motivo = useState(""), motivo = _motivo[0], setMotivo = _motivo[1];
+  var _pasoMerma = useState(t.paso), pasoMerma = _pasoMerma[0], setPasoMerma = _pasoMerma[1];
+  var _guard = useState(false), guard = _guard[0], setGuard = _guard[1];
+  var _err = useState(""), err = _err[0], setErr = _err[1];
+
+  var perdidas = t.vivas - enteras;
+  var wrap = { padding: "16px 15px 24px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 11, minHeight: "100%" };
+  var diasSinTocar = Math.floor((Date.now() - new Date(t.updated_at).getTime()) / 86400000);
+  var atrasada = diasSinTocar >= 4 && t.paso > 2;
+  var letrasMolde = [];
+  if (molde && t.paso === 2) { var n = Math.max(1, Math.round(numStock(molde.cantidad))); if (n > 30) n = 30; for (var i = 0; i < n; i++) letrasMolde.push(letraStock(i)) }
+
+  function toggleLetra(l) { setLetras(function (p) { var i = p.indexOf(l); var c = p.slice(); if (i === -1) c.push(l); else c.splice(i, 1); return c }) }
+
+  async function guardar() {
+    setGuard(true); setErr("");
+    if (perdidas > 0) {
+      var m = await supa("produccion_mermas", "POST", "", {
+        tanda_id: t.id, paso: pasoMerma, cantidad: perdidas,
+        letras: t.paso === 2 ? letras : [], motivo: motivo.trim() || null, creado_por: props.quien || null
+      });
+      if (!m) { setGuard(false); setErr("No se pudo guardar. Probá de nuevo."); return }
+    }
+    var termina = t.paso >= 8 || enteras === 0;
+    var upd = { vivas: enteras, paso: termina ? t.paso : t.paso + 1, estado: termina ? (enteras === 0 ? "perdida" : "terminada") : "abierta" };
+    var r = await supa("produccion_tandas", "PATCH", "?id=eq." + t.id, upd);
+    setGuard(false);
+    if (!r) { setErr("No se pudo guardar. Probá de nuevo."); return }
+    props.onListo();
+  }
+
+  if (fase === "contar") {
+    var opciones = []; for (var k = t.vivas; k >= Math.max(0, t.vivas - 8); k--) opciones.push(k);
+    return (
+      <div style={wrap}>
+        <button onClick={props.onVolver} style={{ background: "none", border: "none", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer", padding: 0, textAlign: "left" }}>← Volver</button>
+        <p style={stLbl}>{props.titulo} · paso {t.paso} de 8 · {PASOS_PROD[t.paso]}</p>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 24, color: navy, lineHeight: 1.15 }}>{PREG_PROD[t.paso].replace("{n}", t.vivas)}</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+          {opciones.map(function (v) {
+            var on = enteras === v;
+            return <button key={v} onClick={function () { setEnteras(v) }} style={{ minWidth: 56, padding: "14px 6px", borderRadius: 11, border: "1px solid " + (on ? (v === t.vivas ? navy : breakRed) : grayBlue), background: on ? (v === t.vivas ? navy : breakRed) : white, color: on ? cream : navy, fontSize: 19, fontFamily: "'Instrument Serif',serif", cursor: "pointer" }}>{v}</button>;
+          })}
+        </div>
+        <p style={{ margin: 0, fontSize: 13, color: grayWarm }}>{enteras === t.vivas ? "Si están todas enteras, tocá " + t.vivas + " y guardá." : "Se perdieron " + perdidas + ". Después te pregunto qué pasó."}</p>
+        <div style={{ flex: 1, minHeight: 8 }}></div>
+        <button onClick={function () { if (perdidas > 0) setFase("detalle"); else guardar() }} disabled={guard} style={Object.assign({}, stBtn(perdidas > 0 ? breakRed : copper, white), { opacity: guard ? 0.6 : 1 })}>{guard ? "Guardando…" : perdidas > 0 ? "Seguir" : "Guardar"}</button>
+        <button onClick={props.onVolver} style={stBtnGhost}>{ESPERA_PROD[t.paso]}</button>
+        {err ? <p style={{ margin: 0, color: breakRed, fontSize: 14 }}>{err}</p> : null}
+      </div>);
+  }
+
+  return (
+    <div style={wrap}>
+      <button onClick={function () { setFase("contar") }} style={{ background: "none", border: "none", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer", padding: 0, textAlign: "left" }}>← Volver</button>
+      <p style={stLbl}>{props.titulo} · se {perdidas === 1 ? "rompió 1" : "rompieron " + perdidas}</p>
+      {letrasMolde.length ? (<>
+        <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 23, color: navy }}>{perdidas === 1 ? "¿Cuál se rompió?" : "¿Cuáles se rompieron?"}</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {letrasMolde.map(function (l) {
+            var on = letras.indexOf(l) !== -1;
+            return <button key={l} onClick={function () { toggleLetra(l) }} style={{ padding: "8px 13px", borderRadius: 999, border: "1px solid " + (on ? breakRed : grayBlue), background: on ? breakRed : white, color: on ? white : navy, fontSize: 13.5, fontFamily: ft, cursor: "pointer" }}>{molde.numero + "." + l}</button>;
+          })}
+        </div>
+      </>) : null}
+      {atrasada ? (<>
+        <p style={stLbl}>Hace {diasSinTocar} días que no anotás nada acá. ¿Dónde se rompieron?</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {[t.paso, t.paso - 1, t.paso - 2, 0].filter(function (p, i, a) { return p >= 0 && a.indexOf(p) === i && (p === 0 || p >= 2) }).map(function (p) {
+            return <button key={p} onClick={function () { setPasoMerma(p) }} style={stChip(pasoMerma === p)}>{pasoNombreProd(p)}</button>;
+          })}
+        </div>
+      </>) : null}
+      <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 23, color: navy }}>¿Qué pasó?</p>
+      <p style={{ margin: 0, fontSize: 13, color: grayWarm }}>Contámelo con tus palabras, como se lo dirías a alguien.</p>
+      <textarea value={motivo} onChange={function (e) { setMotivo(e.target.value) }} placeholder="Escribí acá…" style={Object.assign({}, stField, { minHeight: 66, resize: "vertical" })} />
+      {props.motivosPrevios.length ? (<>
+        <p style={stLbl}>O tocá algo que ya escribiste antes</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {props.motivosPrevios.map(function (m) { return <button key={m} onClick={function () { setMotivo(m) }} style={stChip(motivo === m)}>{m}</button> })}
+        </div>
+      </>) : null}
+      {err ? <p style={{ margin: 0, color: breakRed, fontSize: 14 }}>{err}</p> : null}
+      <div style={{ flex: 1, minHeight: 8 }}></div>
+      <button onClick={guardar} disabled={guard} style={Object.assign({}, stBtn(breakRed, white), { opacity: guard ? 0.6 : 1 })}>{guard ? "Guardando…" : "Guardar la rotura"}</button>
+    </div>);
+}
+
+function ProdResultados(props) {
+  var tandas = props.tandas, mermas = props.mermas, prodPorId = props.prodPorId;
+  var porTanda = {}; mermas.forEach(function (m) { (porTanda[m.tanda_id] = porTanda[m.tanda_id] || []).push(m) });
+
+  var porModelo = {};
+  tandas.forEach(function (t) {
+    var key = t.molde_producto_id ? "m" + t.molde_producto_id : (t.pieza_producto_id ? "p" + t.pieza_producto_id : "d" + (t.descripcion || t.id));
+    var nom = tandaTituloProd(t, prodPorId);
+    var g = porModelo[key] || (porModelo[key] = { nombre: nom, inicial: 0, perdidas: 0, desmolde: 0, secado: 0, hornos: 0, esmaltado: 0, logo: 0, nose: 0 });
+    g.inicial += t.cantidad_inicial;
+    (porTanda[t.id] || []).forEach(function (m) {
+      g.perdidas += m.cantidad;
+      var gr = GRUPO_PROD[m.paso] || "no sé";
+      if (gr === "desmolde") g.desmolde += m.cantidad;
+      else if (gr === "secado") g.secado += m.cantidad;
+      else if (gr === "hornos") g.hornos += m.cantidad;
+      else if (gr === "esmaltado") g.esmaltado += m.cantidad;
+      else if (gr === "logo") g.logo += m.cantidad;
+      else g.nose += m.cantidad;
+    });
+  });
+  var filas = Object.keys(porModelo).map(function (k) { return porModelo[k] }).filter(function (g) { return g.inicial > 0 });
+  filas.sort(function (a, b) { return (b.perdidas / b.inicial) - (a.perdidas / a.inicial) });
+
+  var porLetra = {};
+  mermas.filter(function (m) { return m.paso === 2 && m.letras && m.letras.length }).forEach(function (m) {
+    var t = tandas.filter(function (x) { return x.id === m.tanda_id })[0]; if (!t || !t.molde_producto_id) return;
+    var mo = prodPorId[t.molde_producto_id]; if (!mo) return;
+    m.letras.forEach(function (l) { var k = mo.numero + "." + l; porLetra[k] = (porLetra[k] || 0) + 1 });
+  });
+  var letrasMal = Object.keys(porLetra).map(function (k) { return { k: k, n: porLetra[k] } }).sort(function (a, b) { return b.n - a.n }).slice(0, 6);
+
+  var totalIni = filas.reduce(function (a, g) { return a + g.inicial }, 0);
+  var totalPer = filas.reduce(function (a, g) { return a + g.perdidas }, 0);
+  var COL = { desmolde: breakRed, secado: copper, hornos: olive, esmaltado: gold, logo: "#6b7280", nose: "#b9b9ad" };
+
+  return (
+    <div style={{ padding: "16px 15px 26px", fontFamily: ft, display: "flex", flexDirection: "column", gap: 11 }}>
+      <button onClick={props.onVolver} style={{ background: "none", border: "none", color: grayWarm, fontSize: 14, fontFamily: ft, cursor: "pointer", padding: 0, textAlign: "left" }}>← Volver</button>
+      <p style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 27, color: navy }}>Resultados</p>
+      <p style={{ margin: 0, fontSize: 13, color: grayWarm }}>{totalIni} piezas empezadas · {totalPer} perdidas{totalIni ? " · " + Math.round(totalPer / totalIni * 100) + "% de rotura" : ""}</p>
+      {filas.length === 0 ? <p style={{ color: grayWarm, fontSize: 14.5 }}>Todavía no hay tandas cargadas.</p> : null}
+      {filas.map(function (g, i) {
+        var pct = g.inicial ? Math.round(g.perdidas / g.inicial * 100) : 0;
+        var seg = [["desmolde", g.desmolde], ["secado", g.secado], ["esmaltado", g.esmaltado], ["hornos", g.hornos], ["logo", g.logo], ["nose", g.nose]];
+        return (
+          <div key={i} style={{ background: white, border: "1px solid " + grayBlue, borderRadius: 11, padding: "11px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+              <b style={{ fontSize: 13.5, fontWeight: 600, color: navy }}>{g.nombre}</b>
+              <span style={{ fontSize: 15, fontWeight: 700, color: pct > 0 ? breakRed : olive, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
+            </div>
+            <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: "#ecece2" }}>
+              {seg.map(function (s, j) { return s[1] > 0 ? <span key={j} style={{ width: (s[1] / g.inicial * 100) + "%", background: COL[s[0]] }}></span> : null })}
+              <span style={{ flex: 1, background: "#dcdcd0" }}></span>
+            </div>
+            <p style={{ margin: "5px 0 0", fontSize: 11, color: grayWarm }}>{g.inicial} empezaron · {g.inicial - g.perdidas} llegaron</p>
+          </div>);
+      })}
+      {filas.length ? (
+        <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginTop: 2 }}>
+          {[["desmolde", "desmolde"], ["secado", "secado"], ["esmaltado", "esmaltado"], ["hornos", "hornos"], ["logo", "logo"], ["nose", "no sé"]].map(function (l) {
+            return <span key={l[0]} style={{ fontSize: 10.5, color: grayWarm, display: "flex", alignItems: "center", gap: 3 }}><i style={{ width: 8, height: 8, borderRadius: 2, background: COL[l[0]], display: "inline-block" }}></i>{l[1]}</span>;
+          })}
+        </div>) : null}
+      {letrasMal.length ? (<>
+        <p style={stLbl}>Moldes para revisar</p>
+        {letrasMal.map(function (l) {
+          return (
+            <div key={l.k} style={{ background: white, border: "1px solid " + grayBlue, borderRadius: 11, padding: "10px 12px" }}>
+              <b style={{ display: "block", fontSize: 14, fontWeight: 600, color: navy }}>Molde {l.k}</b>
+              <span style={{ fontSize: 11.5, color: grayWarm }}>se rompió {l.n} {l.n === 1 ? "vez" : "veces"} al desmoldar</span>
+            </div>);
+        })}
+      </>) : null}
+    </div>);
+}
+
 // ====== PROFESORA VIEW ======
 function ProfeView(props) {
   var profe = props.profe, als = props.als, refreshData = props.refreshData, listas = props.listas;
   var isEncargada = profe.esEncargada;
   var puedeStock = !!profe.puedeStock;
   var tomaLista = profe.tomaLista !== false;
-  var defaultTab = tomaLista ? (isEncargada ? "lista" : "clases") : (isEncargada ? "sede" : "clases");
+  var puedeProd = !!profe.puedeProduccion;
+  var veRes = !!profe.veResultados;
+  var defaultTab = tomaLista ? (isEncargada ? "lista" : "clases") : (isEncargada ? "sede" : (puedeProd ? "produccion" : "clases"));
   var _tab = useState(defaultTab), tab = _tab[0], setTab = _tab[1];
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1084,6 +1525,7 @@ function ProfeView(props) {
         {isEncargada ? <button onClick={function () { setTab("sede") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "sede" ? white : cream, color: tab === "sede" ? navy : grayWarm, borderBottom: tab === "sede" ? "2px solid " + copper : "2px solid transparent" }}>Sede</button> : null}
         {isEncargada ? <button onClick={function () { setTab("finanzas") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "finanzas" ? white : cream, color: tab === "finanzas" ? navy : grayWarm, borderBottom: tab === "finanzas" ? "2px solid " + copper : "2px solid transparent" }}>Finanzas</button> : null}
         {puedeStock ? <button onClick={function () { setTab("stock") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: ft, background: tab === "stock" ? white : cream, color: tab === "stock" ? navy : grayWarm, borderBottom: tab === "stock" ? "2px solid " + copper : "2px solid transparent" }}>Stock</button> : null}
+        {puedeProd ? <button onClick={function () { setTab("produccion") }} style={{ flex: 1, padding: "11px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "produccion" ? white : cream, color: tab === "produccion" ? navy : grayWarm, borderBottom: tab === "produccion" ? "2px solid " + copper : "2px solid transparent" }}>Producción</button> : null}
       </div>
       <div style={{ flex: 1, overflow: "auto", background: white }}>
         {tab === "clases" && !isEncargada ? <ProfeClases profe={profe} als={als} /> : null}
@@ -1091,6 +1533,7 @@ function ProfeView(props) {
         {tab === "sede" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="cal" /> : null}
         {tab === "finanzas" && isEncargada ? <EncargadaVista profe={profe} als={als} refreshData={refreshData} subTabOverride="finanzas" /> : null}
         {tab === "stock" && puedeStock ? <StockPanel quien={profe.nombre} /> : null}
+        {tab === "produccion" && puedeProd ? <ProduccionPanel quien={profe.nombre} veResultados={veRes} /> : null}
       </div></div>);
 }
 
@@ -2009,6 +2452,7 @@ function AppArgentina() {
             <button onClick={function () { setAdminView("alumna"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "alumna")}>Alumna</button>
             <button onClick={function () { setAdminView("profe"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "profe")}>Profe</button>
             <button onClick={function () { setAdminView("stock"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "stock")}>Stock</button>
+            <button onClick={function () { setAdminView("produccion"); setLogged(null); setLoggedProfe(null) }} style={adminBtnStyle(adminView === "produccion")}>Producción</button>
             <button onClick={function () { setAdminAuth(false); setAdminView("chat"); setLogged(null); setLoggedProfe(null) }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: "#fca5a5", marginLeft: 4 }}>Salir</button>
           </>) : route === "alumna" && logged ? (<button onClick={function () { setLogged(null); saveSession(null); setTab("cal") }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: grayBlue }}>Salir</button>
           ) : route === "profesora" && loggedProfe ? (<button onClick={function () { setLoggedProfe(null) }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontFamily: ft, background: "rgba(255,255,255,0.1)", color: grayBlue }}>Salir</button>) : null}
@@ -2030,6 +2474,8 @@ function AppArgentina() {
                 </div></div>)
           ) : adminView === "sede" ? (
             <div style={{ flex: 1, overflow: "auto", background: white }}><EncargadaVista profe={{ nombre: "Admin", sede: "Palermo", sedeEncargada: "Palermo", esEncargada: true }} als={als} refreshData={refreshData} /></div>
+          ) : adminView === "produccion" ? (
+            <div style={{ flex: 1, overflow: "auto", background: white }}><ProduccionPanel quien="" veResultados={true} /></div>
           ) : adminView === "stock" ? (
             <div style={{ flex: 1, overflow: "auto", background: white }}><StockPanel quien="" /></div>
           ) : adminView === "profe" ? (
