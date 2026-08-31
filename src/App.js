@@ -636,7 +636,7 @@ var stLbl = { margin: "0 0 6px", fontSize: 11, letterSpacing: "1.2px", textTrans
 var stChip = function (on) { return { padding: "8px 13px", borderRadius: 999, border: "1px solid " + (on ? navy : grayBlue), background: on ? navy : white, color: on ? cream : navy, fontSize: 13.5, fontFamily: ft, cursor: "pointer" } };
 
 function StockPanel(props) {
-  var quien = props.quien || "";
+  var quien = props.quien || "", esAdmin = !!props.esAdmin;
   var _cats = useState([]), cats = _cats[0], setCats = _cats[1];
   var _subs = useState([]), subs = _subs[0], setSubs = _subs[1];
   var _prods = useState([]), prods = _prods[0], setProds = _prods[1];
@@ -759,7 +759,7 @@ function StockPanel(props) {
 
   // ---------- FICHA ----------
   if (pant === "ficha" && ficha) {
-    return <StockFicha prod={ficha} cat={catDe(ficha.categoria_id)} fotos={fotosDe(ficha.id)}
+    return <StockFicha prod={ficha} cat={catDe(ficha.categoria_id)} fotos={fotosDe(ficha.id)} esAdmin={esAdmin}
       subs={subs.filter(function (s) { return s.categoria_id === ficha.categoria_id })}
       onVolver={function () { setFicha(null); setPant("galeria") }}
       onCambio={async function () { await cargar(); setFicha(null); setPant("galeria") }} />;
@@ -997,6 +997,9 @@ function StockAlta(props) {
 
 function StockFicha(props) {
   var prod = props.prod, cat = props.cat, fotos = props.fotos, subs = props.subs;
+  var esAdmin = !!props.esAdmin;
+  var esConsumible = cat && !cat.usa_letras;
+  var _costo = useState(prod.costo == null ? "" : String(prod.costo)), costo = _costo[0], setCosto = _costo[1];
   var _edit = useState(false), edit = _edit[0], setEdit = _edit[1];
   var _cant = useState(numStock(prod.cantidad)), cant = _cant[0], setCant = _cant[1];
   var _lugar = useState(prod.lugar || ""), lugar = _lugar[0], setLugar = _lugar[1];
@@ -1009,7 +1012,15 @@ function StockFicha(props) {
 
   async function guardar() {
     setGuard(true);
-    await supa("stock_productos", "PATCH", "?id=eq." + prod.id, { nombre: nombre.trim() || null, descripcion: desc.trim() || null, lugar: lugar.trim() || null, cantidad: cant });
+    var cambios = { nombre: nombre.trim() || null, descripcion: desc.trim() || null, lugar: lugar.trim() || null, cantidad: cant };
+    if (esAdmin) cambios.costo = costo.trim() === "" ? null : numStock(costo.replace(",", "."));
+    await supa("stock_productos", "PATCH", "?id=eq." + prod.id, cambios);
+    setGuard(false); props.onCambio();
+  }
+  async function seTermino() {
+    if (!window.confirm("¿Se terminó? Lo saco del inventario y guardo la fecha, para saber cuánto duró.")) return;
+    setGuard(true);
+    await supa("stock_productos", "PATCH", "?id=eq." + prod.id, { cantidad: 0, agotado_at: new Date().toISOString(), estado: "archivado" });
     setGuard(false); props.onCambio();
   }
   async function archivar() {
@@ -1048,7 +1059,10 @@ function StockFicha(props) {
         <p style={{ margin: 0, fontSize: 15, color: "#4A5663" }}>{fmtCantStock(prod.cantidad)} {prod.unidad}{prod.lugar ? " · " + prod.lugar : ""}</p>
         {sub ? <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>Tipo: {sub.nombre}</p> : null}
         {prod.descripcion ? <p style={{ margin: 0, fontSize: 15, color: "#4A5663", lineHeight: 1.5 }}>{prod.descripcion}</p> : null}
+        {esAdmin && prod.costo != null ? <p style={{ margin: 0, fontSize: 14, color: navy }}>Costó {fmtMoney(prod.costo)}</p> : null}
+        {prod.agotado_at ? <p style={{ margin: 0, fontSize: 13.5, color: grayWarm }}>Se terminó el {fmtDateShort(new Date(prod.agotado_at)).split(" ").slice(0, 3).join(" ")}</p> : null}
         <button onClick={function () { setEdit(true) }} style={stBtnGhost}>Corregir algo</button>
+        {esConsumible && !prod.agotado_at ? <button onClick={seTermino} disabled={guard} style={Object.assign({}, stBtnGhost, { borderColor: copper, color: copper, fontWeight: 600 })}>Se terminó</button> : null}
         <button onClick={archivar} disabled={guard} style={{ background: "none", border: "none", color: "#b4451f", fontSize: 13.5, fontFamily: ft, cursor: "pointer", textDecoration: "underline", padding: "4px 0" }}>Sacar del inventario</button>
       </>) : (<>
         <p style={stLbl}>¿Qué es?</p>
@@ -1059,6 +1073,10 @@ function StockFicha(props) {
         <input value={lugar} onChange={function (e) { setLugar(e.target.value) }} style={stField} />
         <p style={stLbl}>Descripción</p>
         <textarea value={desc} onChange={function (e) { setDesc(e.target.value) }} style={Object.assign({}, stField, { minHeight: 68, resize: "vertical" })} />
+        {esAdmin ? (<>
+          <p style={stLbl}>¿Cuánto costó? (solo lo ves vos)</p>
+          <input value={costo} onChange={function (e) { setCosto(e.target.value) }} inputMode="decimal" placeholder="Por ejemplo: 80000" style={stField} />
+        </>) : null}
         <button onClick={guardar} disabled={guard} style={Object.assign({}, stBtn(copper, white), { opacity: guard ? 0.6 : 1 })}>{guard ? "Guardando…" : "Guardar cambios"}</button>
         <button onClick={function () { setEdit(false) }} style={stBtnGhost}>Cancelar</button>
       </>)}
@@ -1088,7 +1106,7 @@ function tandaTituloProd(t, prodPorId) {
 function tandaOrigenProd(t) { return t.origen === "colada" ? "colada nuestra" : t.origen === "comprado" ? "comprados" : "del taller" }
 
 function ProduccionPanel(props) {
-  var quien = props.quien || "", veResultados = !!props.veResultados;
+  var quien = props.quien || "", veResultados = !!props.veResultados, esAdmin = !!props.esAdmin;
   var _tandas = useState([]), tandas = _tandas[0], setTandas = _tandas[1];
   var _mermas = useState([]), mermas = _mermas[0], setMermas = _mermas[1];
   var _prods = useState([]), prods = _prods[0], setProds = _prods[1];
@@ -1101,7 +1119,7 @@ function ProduccionPanel(props) {
     var r = await Promise.all([
       supa("produccion_tandas", "GET", "?order=created_at.desc"),
       supa("produccion_mermas", "GET", "?order=created_at.desc"),
-      supa("stock_productos", "GET", "?estado=eq.activo&order=numero"),
+      supa("stock_productos", "GET", "?order=numero"),
       supa("stock_categorias", "GET", "?order=orden")
     ]);
     setTandas(r[0] || []); setMermas(r[1] || []); setProds(r[2] || []); setCats(r[3] || []);
@@ -1115,9 +1133,10 @@ function ProduccionPanel(props) {
   var catPorId = {}; cats.forEach(function (c) { catPorId[c.id] = c });
   function catNombre(n) { for (var i = 0; i < cats.length; i++) if (cats[i].nombre === n) return cats[i]; return null }
   var catMolde = catNombre("molde"), catBarro = catNombre("barros"), catBizc = catNombre("bizcocho");
-  var moldes = catMolde ? prods.filter(function (p) { return p.categoria_id === catMolde.id }) : [];
-  var barros = catBarro ? prods.filter(function (p) { return p.categoria_id === catBarro.id }) : [];
-  var bizcochos = catBizc ? prods.filter(function (p) { return p.categoria_id === catBizc.id }) : [];
+  var activo = function (p) { return p.estado === "activo" };
+  var moldes = catMolde ? prods.filter(function (p) { return p.categoria_id === catMolde.id && activo(p) }) : [];
+  var barros = catBarro ? prods.filter(function (p) { return p.categoria_id === catBarro.id && activo(p) }) : [];
+  var bizcochos = catBizc ? prods.filter(function (p) { return p.categoria_id === catBizc.id && activo(p) }) : [];
   var abiertas = tandas.filter(function (t) { return t.estado === "abierta" });
   var motivosPrevios = [];
   mermas.forEach(function (m) { var v = (m.motivo || "").trim(); if (v && motivosPrevios.indexOf(v) === -1) motivosPrevios.push(v) });
@@ -1137,7 +1156,7 @@ function ProduccionPanel(props) {
       onListo={async function () { await cargar(); setSel(null); setPant("inicio") }} />;
   }
   if (pant === "resultados" && veResultados) {
-    return <ProdResultados tandas={tandas} mermas={mermas} prodPorId={prodPorId} onVolver={function () { setPant("inicio") }} />;
+    return <ProdResultados tandas={tandas} mermas={mermas} prodPorId={prodPorId} esAdmin={esAdmin} barrosTodos={catBarro ? prods.filter(function (p) { return p.categoria_id === catBarro.id }) : []} onVolver={function () { setPant("inicio") }} />;
   }
 
   var terminadas = tandas.filter(function (t) { return t.estado === "terminada" }).slice(0, 6);
@@ -1491,6 +1510,7 @@ function ProdResultados(props) {
             return <span key={l[0]} style={{ fontSize: 10.5, color: grayWarm, display: "flex", alignItems: "center", gap: 3 }}><i style={{ width: 8, height: 8, borderRadius: 2, background: COL[l[0]], display: "inline-block" }}></i>{l[1]}</span>;
           })}
         </div>) : null}
+      {props.esAdmin ? <RendimientoBarros barros={props.barrosTodos || []} tandas={tandas} mermas={mermas} /> : null}
       {letrasMal.length ? (<>
         <p style={stLbl}>Moldes para revisar</p>
         {letrasMal.map(function (l) {
@@ -1502,6 +1522,59 @@ function ProdResultados(props) {
         })}
       </>) : null}
     </div>);
+}
+
+function RendimientoBarros(props) {
+  var barros = props.barros, tandas = props.tandas, mermas = props.mermas;
+  var perdidasDe = {};
+  mermas.forEach(function (m) { perdidasDe[m.tanda_id] = (perdidasDe[m.tanda_id] || 0) + m.cantidad });
+
+  var filas = barros.map(function (b) {
+    var ts = tandas.filter(function (t) { return t.barro_producto_id === b.id });
+    if (!ts.length) return null;
+    var coladas = 0, llegaron = 0, cerradas = 0;
+    ts.forEach(function (t) {
+      coladas += t.cantidad_inicial;
+      if (t.estado === "terminada" || t.estado === "perdida") { llegaron += t.vivas; cerradas++ }
+    });
+    var dias = null;
+    if (b.agotado_at) dias = Math.max(1, Math.round((new Date(b.agotado_at).getTime() - new Date(b.created_at).getTime()) / 86400000));
+    return { b: b, coladas: coladas, llegaron: llegaron, cerradas: cerradas, total: ts.length, dias: dias };
+  }).filter(Boolean);
+
+  if (!filas.length) return null;
+  filas.sort(function (a, b) { return (b.b.agotado_at ? 1 : 0) - (a.b.agotado_at ? 1 : 0) });
+
+  return (
+    <>
+      <p style={stLbl}>Rendimiento de los barros · solo lo ves vos</p>
+      {filas.map(function (f) {
+        var b = f.b;
+        var costo = b.costo == null ? null : numStock(b.costo);
+        var porColada = costo && f.coladas ? Math.round(costo / f.coladas) : null;
+        var porVendible = costo && f.llegaron ? Math.round(costo / f.llegaron) : null;
+        return (
+          <div key={b.id} style={{ background: white, border: "1px solid " + grayBlue, borderRadius: 11, padding: "11px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <b style={{ fontSize: 13.5, fontWeight: 600, color: navy }}>{b.nombre || "Barro " + b.numero}</b>
+              <span style={{ fontSize: 11.5, color: b.agotado_at ? grayWarm : olive }}>{b.agotado_at ? "se terminó" : "en uso"}</span>
+            </div>
+            <p style={{ margin: "4px 0 0", fontSize: 12.5, color: grayWarm }}>
+              {f.coladas} piezas coladas en {f.total} {f.total === 1 ? "tanda" : "tandas"}
+              {f.dias ? " · duró " + f.dias + " días" : ""}
+            </p>
+            {f.cerradas ? <p style={{ margin: "2px 0 0", fontSize: 12.5, color: grayWarm }}>{f.llegaron} llegaron a estar listas ({f.cerradas} {f.cerradas === 1 ? "tanda cerrada" : "tandas cerradas"})</p> : null}
+            {costo ? (
+              <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid " + cream }}>
+                <p style={{ margin: 0, fontSize: 12.5, color: grayWarm }}>Costó {fmtMoney(costo)}</p>
+                {porColada ? <p style={{ margin: "2px 0 0", fontSize: 13, color: navy }}>{fmtMoney(porColada)} por pieza colada</p> : null}
+                {porVendible ? <p style={{ margin: "2px 0 0", fontSize: 14, color: breakRed, fontWeight: 600 }}>{fmtMoney(porVendible)} por pieza que llega a vender</p> : null}
+                {porColada && porVendible && porVendible > porColada ? <p style={{ margin: "3px 0 0", fontSize: 11.5, color: grayWarm }}>La diferencia es la barbotina de las que se rompieron.</p> : null}
+              </div>) :
+              <p style={{ margin: "5px 0 0", fontSize: 11.5, color: copper }}>Cargá cuánto costó en el Stock para ver el costo por pieza.</p>}
+          </div>);
+      })}
+    </>);
 }
 
 // ====== PROFESORA VIEW ======
@@ -2475,9 +2548,9 @@ function AppArgentina() {
           ) : adminView === "sede" ? (
             <div style={{ flex: 1, overflow: "auto", background: white }}><EncargadaVista profe={{ nombre: "Admin", sede: "Palermo", sedeEncargada: "Palermo", esEncargada: true }} als={als} refreshData={refreshData} /></div>
           ) : adminView === "produccion" ? (
-            <div style={{ flex: 1, overflow: "auto", background: white }}><ProduccionPanel quien="" veResultados={true} /></div>
+            <div style={{ flex: 1, overflow: "auto", background: white }}><ProduccionPanel quien="" veResultados={true} esAdmin={true} /></div>
           ) : adminView === "stock" ? (
-            <div style={{ flex: 1, overflow: "auto", background: white }}><StockPanel quien="" /></div>
+            <div style={{ flex: 1, overflow: "auto", background: white }}><StockPanel quien="" esAdmin={true} /></div>
           ) : adminView === "profe" ? (
             !loggedProfe ? <GenericLogin table="profesoras" onLogin={function (row) { var p = profes.find(function (x) { return x.id === row.id }); setLoggedProfe(p || row) }} subtitle="Seleccioná profesora" skipPw={true} refreshData={refreshData} />
             : curProfe ? <ProfeView profe={curProfe} als={als} refreshData={refreshData} listas={listas} /> : null
