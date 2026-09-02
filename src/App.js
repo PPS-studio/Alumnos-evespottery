@@ -6,6 +6,27 @@ var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 var SUPA_REST = SUPA_URL + "/rest/v1";
 var HEADERS = { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY, "Content-Type": "application/json", "Prefer": "return=representation" };
 
+// ---- SESIÓN ----
+function guardarSesion(tok) { try { if (tok) window.localStorage.setItem(SESION_KEY, tok); else window.localStorage.removeItem(SESION_KEY) } catch (e) {} }
+function leerSesion() { try { return window.localStorage.getItem(SESION_KEY) || null } catch (e) { return null } }
+
+// Pide al servidor que verifique nombre + contraseña. El navegador nunca las compara.
+async function pedirLogin(tipo, nombre, password) {
+  try {
+    var r = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipo: tipo, nombre: nombre, password: password })
+    });
+    var d = await r.json().catch(function () { return null });
+    if (!r.ok || !d || !d.ok) return { ok: false, error: (d && d.error) || "No pudimos verificar tus datos. Probá de nuevo." };
+    guardarSesion(d.token);
+    return { ok: true, id: d.id, nombre: d.nombre };
+  } catch (e) {
+    return { ok: false, error: "No hay conexión. Fijate que tengas internet y probá de nuevo." };
+  }
+}
+
 async function supa(table, method, params, body) {
   var url = SUPA_REST + "/" + table + (params || "");
   var opts = { method: method || "GET", headers: Object.assign({}, HEADERS) };
@@ -21,7 +42,8 @@ async function supa(table, method, params, body) {
 // ====== THEME ======
 var navy = "#132435", gold = "#D0B48F", copper = "#C78538", olive = "#8C8135", grayBlue = "#CBD1DD", cream = "#E9E9E2", grayWarm = "#808078", white = "#fff";
 var ft = "'Barlow Semi Condensed',sans-serif";
-var ADMIN_PW = "Clases2026";
+// La contraseña de admin ya no vive acá: la verifica el servidor (api/login.js).
+var SESION_KEY = "ep_sesion";
 var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "miércoles-18:30", "jueves-18:30", "sábado-10:00"],
   "Palermo": ["lunes-18:30", "martes-10:00", "martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
@@ -125,12 +147,12 @@ function buildAlumnoFromRow(row, pagos, cancs, extras) {
     return { date: e.fecha_iso, mk: e.mes_key, tipo: e.tipo }
   });
   var turno2 = row.turno2_dia && row.turno2_hora ? { dia: row.turno2_dia, hora: row.turno2_hora } : null;
-  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, turno2: turno2, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, pw: row.password, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x", excepcion: !!row.excepcion, descuento: row.descuento || 0 }
+  return { id: row.id, nombre: row.nombre, tel: row.tel || "", email: row.email || "", sede: row.sede, turno: { dia: row.turno_dia, hora: row.turno_hora }, turno2: turno2, mp: mp, hist: [], ex: ex, canc: canc, reg: row.clase_regalo || 0, estado: row.estado || "activo", pendArrastre: row.pend_arrastre || 0, frecuencia: row.frecuencia || "1x", excepcion: !!row.excepcion, descuento: row.descuento || 0 }
 }
 function buildProfeFromRow(row) {
   var sedes = row.sedes || [];
   var sede = sedes.length > 0 ? sedes[0] : "Palermo";
-  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], pw: row.password, esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false, tomaLista: row.toma_lista !== false, puedeProduccion: row.puede_produccion || false, veResultados: row.ve_resultados || false }
+  return { id: row.id, nombre: row.nombre, sede: sede, sedes: sedes, horarios: row.horarios || [], esEncargada: row.encargada || false, sedeEncargada: row.encargada ? sede : null, puedeStock: row.puede_stock || false, tomaLista: row.toma_lista !== false, puedeProduccion: row.puede_produccion || false, veResultados: row.ve_resultados || false }
 }
 function getMonthStats(al, mk) {
   var p = mk.split("-").map(Number);
@@ -202,7 +224,14 @@ function LoadingScreen() {
 function AdminLogin(props) {
   var _pw = useState(""), pw = _pw[0], setPw = _pw[1];
   var _err = useState(""), err = _err[0], setErr = _err[1];
-  function doLogin() { if (pw === ADMIN_PW) { props.onLogin(); setErr("") } else setErr("Contraseña incorrecta.") }
+  var _busyA = useState(false), busyA = _busyA[0], setBusyA = _busyA[1];
+  async function doLogin() {
+    if (busyA) return;
+    setBusyA(true); setErr("");
+    var r = await pedirLogin("admin", "", pw);
+    setBusyA(false);
+    if (r.ok) { props.onLogin() } else { setErr(r.error) }
+  }
   var iStyle = { width: "100%", padding: "12px 16px", borderRadius: 10, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, background: white, outline: "none", boxSizing: "border-box" };
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: cream }}>
@@ -225,7 +254,7 @@ function AdminLogin(props) {
 function AdminChat(props) {
   var als = props.als, refreshData = props.refreshData, profes = props.profes, listas = props.listas, cuotas = props.cuotas || [], horariosExtra = props.horariosExtra || [];
   var ref = useRef(null);
-  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase a favor: Nombre\n• Contraseña: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Ver contraseñas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Cancelar clases: fecha\n• Agendar clase: Nombre / día hora fecha\n• Alta profe / Baja profe / Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario / Cerrar horario / Ver horarios";
+  var welcomeMsg = "¡Hola! Asistente Eves Pottery ✦\n\nComandos:\n• Alta alumno: Nombre / Sede / día hora\n• Baja: Nombre\n• Pago recibido: Nombre (mes año)\n• Pagos mes año: nombre1, nombre2...\n• Consulta: Nombre\n• Clase a favor: Nombre\n• Resetear pw: Nombre\n• Resetear todas [P|SI]\n• Alumnos [P|SI] hoy/martes/mañana\n• Ver alumnos [P|SI]\n• Pagos pendientes [P|SI]\n• Cancelar clase: Nombre / fecha\n• Cancelar clases: fecha\n• Agendar clase: Nombre / día hora fecha\n• Alta profe / Baja profe / Ver profes\n• Notificaciones\n• Ver cuotas\n• Cuota: Sede / 1x|2x / forma / v1 / v2 / v3\n• Frecuencia: Nombre / 2x\n• Abrir horario / Cerrar horario / Ver horarios";
   var _m = useState([{ from: "bot", text: welcomeMsg }]), msgs = _m[0], setMsgs = _m[1];
   var _i = useState(""), inp = _i[0], setInp = _i[1];
   var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
@@ -255,7 +284,7 @@ function AdminChat(props) {
     }
     if (t.includes("ver profe") || t === "profes") {
       if (!profes.length) return "No hay profes cargadas.";
-      return "Profesoras:\n" + profes.map(function (p) { return "• " + p.nombre + " — " + p.sede + (p.esEncargada ? " (Enc)" : "") + " — " + p.horarios.map(function (h) { return h.replace("-", " ") }).join(", ") + " — pw: " + (p.pw || "sin pw") }).join("\n")
+      return "Profesoras:\n" + profes.map(function (p) { return "• " + p.nombre + " — " + p.sede + (p.esEncargada ? " (Enc)" : "") + " — " + p.horarios.map(function (h) { return h.replace("-", " ") }).join(", ") }).join("\n")
     }
     if (t.startsWith("alta profe")) {
       var raw = txt.replace(/alta\s*profe\s*:?\s*/i, "").trim();
@@ -288,9 +317,7 @@ function AdminChat(props) {
       return "Contraseñas regeneradas" + sedeLabel + " (" + results2.length + "):\n" + results2.join("\n");
     }
     if (t.includes("ver contra") || t.includes("ver pw") || t.includes("contraseñas")) {
-      var filtered = filterBySede(als, sedeFilter);
-      if (!filtered.length) return "No hay alumnos" + sedeLabel;
-      return "Contraseñas" + sedeLabel + ":\n" + filtered.map(function (a) { return "• " + a.nombre + " — " + a.sede + " — " + (a.pw || "sin pw") }).join("\n") + "\nTotal: " + filtered.length;
+      return "🔒 Las contraseñas ya no se pueden ver.\n\nAhora se guardan cifradas: ni yo ni nadie puede leerlas, y si alguien accediera a la base tampoco.\n\nSi una alumna la olvidó, generale una nueva y te la muestro para que se la mandes:\n\n  Resetear pw: Nombre";
     }
     if (t.startsWith("resetear pw") || t.startsWith("reset pw")) {
       var n2 = txt.replace(/resetear\s*(pw|contra(seña)?)\s*:?\s*/i, "").replace(/reset\s*pw\s*:?\s*/i, "").trim();
@@ -305,7 +332,7 @@ function AdminChat(props) {
       var n3 = txt.replace(/^(contraseña|pw)\s*:?\s*/i, "").trim();
       if (!n3) return "Formato: Contraseña: Nombre";
       var idx3 = findA(n3); if (idx3 === -1) return "✗ No encontré ese nombre.";
-      return als[idx3].nombre + " — Contraseña: " + (als[idx3].pw || "sin pw");
+      return "🔒 No puedo mostrarte la contraseña de " + als[idx3].nombre + ": están cifradas y no se pueden leer.\n\nSi se la olvidó, generale una nueva y te la muestro:\n\n  Resetear pw: " + als[idx3].nombre;
     }
     if (t.includes("pagos pendiente")) {
       var now2 = new Date(); var mk = now2.getFullYear() + "-" + now2.getMonth();
@@ -356,7 +383,6 @@ function AdminChat(props) {
       var idx6 = findA(n6); if (idx6 === -1) return "✗ No encontré ese nombre."; var a6 = als[idx6];
       var meses4 = Object.keys(a6.mp || {});
       var r4 = "✦ " + a6.nombre + "\n📍 " + a6.sede + " · " + a6.turno.dia + " " + a6.turno.hora;
-      r4 += "\n🔑 Contraseña: " + (a6.pw || "sin pw");
       r4 += "\n💳 Pagó: " + (meses4.length ? meses4.map(function (k) { var p = k.split("-"); return MN[parseInt(p[1])] + " " + p[0] }).join(", ") : "—");
       r4 += "\n🎁 A favor: " + (a6.reg || 0);
       meses4.forEach(function (mk3) { var stats = getMonthStats(a6, mk3); var p = mk3.split("-").map(Number); r4 += "\n\n📅 " + MN[p[1]] + " " + p[0] + ": " + stats.clasesEfectivas + "/" + CLASES_BASE + " clases, " + stats.cancTotal + " canc, " + stats.pendientes + " pend" });
@@ -519,7 +545,7 @@ function AdminChat(props) {
       await refreshData();
       return (quitarExc ? "✓ Excepción quitada a " : "✓ Excepción activada para ") + als[idxExc].nombre + (quitarExc ? "." : ". Ahora puede reservar sin necesidad de pagar.");
     }
-    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, contraseña, resetear pw, ver contraseñas, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a: Nombre, mensaje [día], mensaje [sede], mensaje deudoras, ver mensajes, excepción"
+    return "No entendí. Probá: ver alumnos, alta, baja, pago recibido, pagos masivo, consulta, clase a favor, resetear pw, alumnos de hoy, pagos pendientes, alta profe, ver profes, notificaciones, ver cuotas, cuota, frecuencia, mensaje general, mensaje a: Nombre, mensaje [día], mensaje [sede], mensaje deudoras, ver mensajes, excepción"
   }
 
   async function send() {
@@ -554,16 +580,23 @@ function GenericLogin(props) {
     setErr(""); setBusy(true);
     var searchName = nom.trim().toLowerCase();
     if (!searchName) { setErr("Ingresá tu nombre."); setBusy(false); return }
-    var queryParams = "?order=nombre&limit=1000" + (table === "alumnos" ? "&estado=eq.activo" : "");
-    var rows = await supa(table, "GET", queryParams);
+
+    // El admin entra "como" una alumna o profesora sin pedir contraseña.
+    if (skipPw) {
+      var queryParams = "?order=nombre&limit=1000&select=" + (table === "alumnos" ? "id,nombre,tel,email,sede,turno_dia,turno_hora,clase_regalo,estado,pend_arrastre,created_at,frecuencia,turno2_dia,turno2_hora,excepcion,descuento" : "id,nombre,sedes,horarios,encargada,created_at,puede_stock,toma_lista,puede_produccion,ve_resultados") + (table === "alumnos" ? "&estado=eq.activo" : "");
+      var rows = await supa(table, "GET", queryParams);
+      setBusy(false);
+      if (!rows || rows.length === 0) { setErr("Error al conectar. Intentá de nuevo."); return }
+      var found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName }) || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
+      if (!found) { setErr("No encontramos ese nombre."); return }
+      onLogin(found); return;
+    }
+
+    // Con contraseña: la verifica el servidor. Acá nunca se compara nada.
+    var r = await pedirLogin(table === "alumnos" ? "alumna" : "profesora", nom, pw);
     setBusy(false);
-    if (!rows || rows.length === 0) { setErr("Error al conectar. Intentá de nuevo."); return }
-    var found = rows.find(function (item) { return item.nombre.toLowerCase() === searchName }) || rows.find(function (item) { return item.nombre.toLowerCase().includes(searchName) });
-    if (!found) { setErr("No encontramos ese nombre."); return }
-    if (skipPw) { onLogin(found); return }
-    if (!found.password) { setErr("Tu cuenta aún no tiene contraseña. Contactá al equipo."); return }
-    if (found.password !== pw) { setErr("Contraseña incorrecta."); return }
-    onLogin(found);
+    if (!r.ok) { setErr(r.error); return }
+    onLogin({ id: r.id, nombre: r.nombre });
   }
   var iStyle = { width: "100%", padding: "12px 16px", borderRadius: 10, border: "1px solid " + grayBlue, fontSize: 14, fontFamily: ft, background: white, outline: "none", boxSizing: "border-box" };
   return (
@@ -2487,10 +2520,8 @@ function AppArgentina() {
   var loadData = useCallback(async function () {
     try {
       var [alRows, profeRows, pagos, cancs, extras, listasRows, cuotasRows, horariosExtraRows, mensajesRows] = await Promise.all([
-        supa("alumnos", "GET", "?estado=eq.activo&order=nombre"), supa("profesoras", "GET", "?order=nombre"), supa("meses_pagados", "GET"), supa("cancelaciones", "GET"), supa("clases_extra", "GET"), supa("listas", "GET"), supa("cuotas", "GET"), supa("horarios_extra", "GET"), supa("mensajes", "GET", "?order=created_at.desc")
+        supa("alumnos", "GET", "?estado=eq.activo&order=nombre&select=id,nombre,tel,email,sede,turno_dia,turno_hora,clase_regalo,estado,pend_arrastre,created_at,frecuencia,turno2_dia,turno2_hora,excepcion,descuento"), supa("profesoras", "GET", "?order=nombre&select=id,nombre,sedes,horarios,encargada,created_at,puede_stock,toma_lista,puede_produccion,ve_resultados"), supa("meses_pagados", "GET"), supa("cancelaciones", "GET"), supa("clases_extra", "GET"), supa("listas", "GET"), supa("cuotas", "GET"), supa("horarios_extra", "GET"), supa("mensajes", "GET", "?order=created_at.desc")
       ]);
-      if (alRows) { for (var ai = 0; ai < alRows.length; ai++) { if (!alRows[ai].password || alRows[ai].password === "" || alRows[ai].password === "null") { var newPw = genPw("eves"); await supa("alumnos", "PATCH", "?id=eq." + alRows[ai].id, { password: newPw }); alRows[ai].password = newPw } } }
-      if (profeRows) { for (var pi = 0; pi < profeRows.length; pi++) { if (!profeRows[pi].password || profeRows[pi].password === "" || profeRows[pi].password === "null") { var newPwP = genPw("prof"); await supa("profesoras", "PATCH", "?id=eq." + profeRows[pi].id, { password: newPwP }); profeRows[pi].password = newPwP } } }
       setAls((alRows || []).map(function (r) { return buildAlumnoFromRow(r, pagos || [], cancs || [], extras || []) }));
       setProfes((profeRows || []).map(buildProfeFromRow));
       setListas(listasRows || []); setCuotas(cuotasRows || []); setHorariosExtra(horariosExtraRows || []); setMensajes(mensajesRows || []);
