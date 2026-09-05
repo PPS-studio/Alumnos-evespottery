@@ -1,4 +1,8 @@
-// Manda push a las alumnas cuando enviás un mensaje general/segmentado (solo a quienes tengan notif_generales ON)
+// Manda push a las alumnas.
+//   tipo=importante (por defecto) -> a quienes tengan "Avisos importantes"
+//   tipo=promo                    -> a quienes tengan "Promos y novedades"
+// Se separan para que apagar la publicidad no deje a nadie sin enterarse
+// de que se suspendio su clase.
 const webpush = require("web-push");
 const SUPA_URL = process.env.SUPA_URL || "https://rwlfbbmbustxpuvbakbo.supabase.co";
 const SUPA_KEY = process.env.SUPA_SERVICE_KEY;
@@ -17,10 +21,12 @@ module.exports = async function handler(req, res) {
     const dia = (req.query && req.query.dia) || null;
     const hora = (req.query && req.query.hora) || null;
     const sede = (req.query && req.query.sede) || null;
+    const tipo = ((req.query && req.query.tipo) || "importante").toLowerCase();
+    const campo = tipo === "promo" ? "notif_promos" : "notif_generales";
 
     const [alumnos, subs] = await Promise.all([
       sb("/alumnos?estado=eq.activo&select=id,sede,turno_dia,turno_hora"),
-      sb("/push_subs?notif_generales=eq.true&select=*")
+      sb("/push_subs?" + campo + "=eq.true&select=*")
     ]);
     const alById = {}; alumnos.forEach(a => { alById[a.id] = a; });
 
@@ -37,6 +43,6 @@ module.exports = async function handler(req, res) {
         sent++;
       } catch (e) {}
     }
-    res.status(200).json({ ok: true, sent });
+    res.status(200).json({ ok: true, tipo, sent });
   } catch (e) { res.status(500).json({ ok: false, error: String(e) }); }
 };

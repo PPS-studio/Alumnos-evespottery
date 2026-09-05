@@ -2362,7 +2362,7 @@ function TabNotificaciones(props) {
       var rows = await supa("push_subs", "GET", "?alumno_id=eq." + al.id);
       if (cancelled) return;
       if (rows && rows.length) setPrefs(rows[0]);
-      else setPrefs({ alumno_id: al.id, subscription: null, notif_generales: false, notif_48h: false, notif_2h: false });
+      else setPrefs({ alumno_id: al.id, subscription: null, notif_generales: false, notif_promos: false, notif_48h: false, notif_2h: false });
       setLoading(false);
     })();
     return function () { cancelled = true };
@@ -2395,7 +2395,7 @@ function TabNotificaciones(props) {
       // upsert
       var existing = await supa("push_subs", "GET", "?alumno_id=eq." + al.id);
       if (existing && existing.length) {
-        await supa("push_subs", "PATCH", "?alumno_id=eq." + al.id, { subscription: subJson, notif_generales: payload.notif_generales, notif_48h: payload.notif_48h, notif_2h: payload.notif_2h, updated_at: new Date().toISOString() });
+        await supa("push_subs", "PATCH", "?alumno_id=eq." + al.id, { subscription: subJson, notif_generales: payload.notif_generales, notif_promos: payload.notif_promos, notif_48h: payload.notif_48h, notif_2h: payload.notif_2h, updated_at: new Date().toISOString() });
       } else {
         await supa("push_subs", "POST", "", payload);
       }
@@ -2407,20 +2407,22 @@ function TabNotificaciones(props) {
   if (loading || !prefs) return <div style={{ padding: 36, textAlign: "center", color: grayWarm, fontFamily: ft, fontSize: 14 }}>Cargando…</div>;
 
   var rows = [
-    { campo: "notif_generales", titulo: "Avisos del taller", desc: "Novedades y mensajes importantes que enviamos." },
-    { campo: "notif_48h", titulo: "Recordatorio 48 h antes", desc: "Te avisamos 48 h antes de cada clase, así tenés tiempo de cancelar si no podés ir." },
-    { campo: "notif_2h", titulo: "Recordatorio 2 h antes", desc: "Un aviso 2 h antes para que no se te pase la clase." }
+    { campo: "notif_generales", titulo: "Avisos importantes", desc: "Si se suspende tu clase o cambia algo del taller. Te recomendamos dejarlo prendido.", destacado: true },
+    { campo: "notif_promos", titulo: "Promos y novedades", desc: "Descuentos, talleres especiales y novedades. Podés apagarlo sin perderte los avisos importantes." },
+    { campo: "notif_48h", titulo: "Aviso 48 h antes de tu clase", desc: "Para que tengas tiempo de cancelar si no podés ir. Si no hacés nada, tu clase queda confirmada." },
+    { campo: "notif_2h", titulo: "Aviso 2 h antes", desc: "Un recordatorio corto para que no se te pase." }
   ];
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ background: "#fdf6ec", borderRadius: 10, padding: "12px 14px", border: "1px solid #e8d4b0" }}>
-        <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft, lineHeight: 1.5 }}>Prendé las notificaciones que quieras recibir. Solo te llega lo que actives.</p>
+        <p style={{ margin: 0, fontSize: 12, color: navy, fontFamily: ft, lineHeight: 1.5 }}>Elegí qué querés recibir. Solo te llega lo que actives — y podés cambiarlo cuando quieras.</p>
       </div>
       {rows.map(function (r) {
         var on = !!prefs[r.campo];
+        var borde = r.destacado ? copper : grayBlue;
         return (
-          <div key={r.campo} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: white, borderRadius: 12, border: "1px solid " + (on ? gold : grayBlue) }}>
+          <div key={r.campo} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: white, borderRadius: 12, border: (r.destacado ? "2px solid " + borde : "1px solid " + (on ? gold : grayBlue)) }}>
             <div style={{ flex: 1 }}>
               <p style={{ margin: 0, fontWeight: 600, color: navy, fontFamily: ft, fontSize: 14 }}>{r.titulo}</p>
               <p style={{ margin: "3px 0 0", fontSize: 12, color: grayWarm, fontFamily: ft, lineHeight: 1.4 }}>{r.desc}</p>
