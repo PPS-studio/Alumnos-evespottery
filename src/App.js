@@ -2440,12 +2440,18 @@ function TabNotificaciones(props) {
   );
 }
 
+function vistosKey(al) { return "ep_avisos_vistos_" + (al && al.id ? al.id : "x") }
+function leerVistos(al) { try { return JSON.parse(window.localStorage.getItem(vistosKey(al)) || "{}") } catch (e) { return {} } }
+function guardarVisto(al, id) { try { var v = leerVistos(al); v[id] = 1; window.localStorage.setItem(vistosKey(al), JSON.stringify(v)) } catch (e) {} }
+
 function MensajesBanner(props) {
   var mensajes = props.mensajes, al = props.al;
-  var _dismissed = useState({}), dismissed = _dismissed[0], setDismissed = _dismissed[1];
+  var _dismissed = useState(function () { return leerVistos(al) }), dismissed = _dismissed[0], setDismissed = _dismissed[1];
+  useEffect(function () { setDismissed(leerVistos(al)) }, [al && al.id]);
   var relevantes = mensajesParaAlumna(mensajes, al).filter(function (m) { return !dismissed[m.id] });
   if (!relevantes.length) return null;
   async function marcarLeido(m) {
+    guardarVisto(al, m.id);
     setDismissed(function (p) { var o = Object.assign({}, p); o[m.id] = true; return o });
     if (!m.es_general) { await supa("mensajes", "PATCH", "?id=eq." + m.id, { leido: true }) }
   }
@@ -2466,36 +2472,6 @@ function MensajesBanner(props) {
     </div>
   );
 }
-function MensajesBannerOLD(props) {
-  var mensajes = props.mensajes, alId = props.alId;
-  var _dismissed = useState({}), dismissed = _dismissed[0], setDismissed = _dismissed[1];
-  var relevantes = (mensajes || []).filter(function (m) {
-    if (dismissed[m.id]) return false;
-    return m.es_general || m.alumno_id === alId;
-  });
-  if (!relevantes.length) return null;
-  async function marcarLeido(m) {
-    setDismissed(function (p) { var o = Object.assign({}, p); o[m.id] = true; return o });
-    if (!m.es_general) { await supa("mensajes", "PATCH", "?id=eq." + m.id, { leido: true }) }
-  }
-  return (
-    <div style={{ padding: "10px 14px", background: "#fdf6ec", borderBottom: "1px solid #e8d4b0" }}>
-      {relevantes.map(function (m) {
-        return (
-          <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: white, borderRadius: 10, border: "1px solid " + gold, marginBottom: 6 }}>
-            <span style={{ fontSize: 18, lineHeight: 1.2 }}>💛</span>
-            <div style={{ flex: 1 }}>
-              <p style={{ margin: 0, fontSize: 10, color: copper, fontFamily: ft, letterSpacing: "1px", textTransform: "uppercase", fontWeight: 600 }}>{m.es_general ? "Aviso del taller" : "Mensaje para vos"}</p>
-              <p style={{ margin: "4px 0 0", fontSize: 13, color: navy, fontFamily: ft, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</p>
-            </div>
-            <button onClick={function () { marcarLeido(m) }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: grayWarm, padding: 0, lineHeight: 1 }}>×</button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function AppArgentina() {
   var hash = useHash();
   var _als = useState([]), als = _als[0], setAls = _als[1];
@@ -2598,7 +2574,7 @@ function AppArgentina() {
         !logged ? <GenericLogin table="alumnos" onLogin={function (row) { var a = als.find(function (x) { return x.id === row.id }); if (a) { setLogged(a); saveSession(a); setTab("cal") } else refreshData().then(function () { setLogged(row); saveSession(row); setTab("cal") }) }} subtitle="Accedé a tus clases" refreshData={refreshData} />
         : (<div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "10px 18px", background: white, borderBottom: "1px solid " + grayBlue }}><p style={{ margin: 0, fontWeight: 700, color: navy, fontFamily: ft, fontSize: 15 }}>{cur ? cur.nombre : ""}</p><p style={{ margin: 0, color: grayWarm, fontSize: 12, fontFamily: ft }}>{cur ? cur.sede + " · " + cur.turno.dia + " " + cur.turno.hora : ""}</p></div>
-            <MensajesBanner mensajes={mensajes} alId={cur ? cur.id : null} />
+            <MensajesBanner mensajes={mensajes} al={cur} />
             <div style={{ display: "flex", borderBottom: "1px solid " + grayBlue, overflowX: "auto" }}>
               <button onClick={function () { setTab("cal") }} style={{ flex: "1 0 auto", padding: "11px 14px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "cal" ? white : cream, color: tab === "cal" ? navy : grayWarm, borderBottom: tab === "cal" ? "2px solid " + copper : "2px solid transparent", whiteSpace: "nowrap" }}>Mis clases</button>
               <button onClick={function () { setTab("gest") }} style={{ flex: "1 0 auto", padding: "11px 14px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: ft, background: tab === "gest" ? white : cream, color: tab === "gest" ? navy : grayWarm, borderBottom: tab === "gest" ? "2px solid " + copper : "2px solid transparent", whiteSpace: "nowrap" }}>Gestionar</button>
