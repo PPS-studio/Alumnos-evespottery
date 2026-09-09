@@ -101,6 +101,10 @@ function hrsUntil(d) { return (d.getTime() - Date.now()) / 3600000 }
 function toArg(d) { return new Date(d.getTime() - 3 * 3600000) }
 function dayKey(d) { var a = toArg(typeof d === "string" ? new Date(d) : d); return a.getUTCFullYear() + "-" + String(a.getUTCMonth() + 1).padStart(2, "0") + "-" + String(a.getUTCDate()).padStart(2, "0") }
 function matchDay(iso1, iso2) { if (!iso1 || !iso2) return false; return dayKey(typeof iso1 === "string" ? new Date(iso1) : iso1) === dayKey(typeof iso2 === "string" ? new Date(iso2) : iso2) }
+// La hora (HH:MM) de una fecha, en horario de Argentina.
+function horaArg(d) { var a = toArg(typeof d === "string" ? new Date(d) : d); return String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
+// Una recuperacion pertenece a un turno solo si coincide el dia Y la hora.
+function matchSlot(iso, iso2, hora) { return matchDay(iso, iso2) && (!hora || horaArg(iso) === hora) }
 function fmtDate(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; var mn = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]; return dn[a.getUTCDay()] + " " + a.getUTCDate() + " " + mn[a.getUTCMonth()] + " · " + String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
 function fmtDateShort(d) { var a = toArg(d); var dn = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]; return dn[a.getUTCDay()] + " " + a.getUTCDate() + "/" + (a.getUTCMonth() + 1) + " " + String(a.getUTCHours()).padStart(2, "0") + ":" + String(a.getUTCMinutes()).padStart(2, "0") }
 function genPw(prefix) { return prefix + String(Math.floor(1000 + Math.random() * 9000)) }
@@ -178,7 +182,7 @@ function getCupoForSlot(allAls, sede, dia, hora, fecha, maxCupo) {
     var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
     var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
     if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) fijos++ }
-    (a.ex || []).forEach(function (e) { if (matchDay(e.date, dateStr)) recups++ })
+    (a.ex || []).forEach(function (e) { if (matchSlot(e.date, dateStr, hora)) recups++ })
   });
   var cap = maxCupo || MAX_CUPO;
   return { ocupado: fijos + recups, libre: cap - fijos - recups };
@@ -190,7 +194,7 @@ function getAlumnosForSlot(allAls, sede, dia, hora, fecha) {
     var matchT1 = a.turno.dia === dia && a.turno.hora === hora;
     var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora;
     if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }) }
-    (a.ex || []).forEach(function (e) { if (matchDay(e.date, dateStr) && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: "recuperacion" }) })
+    (a.ex || []).forEach(function (e) { if (matchSlot(e.date, dateStr, hora) && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: "recuperacion" }) })
   });
   return result;
 }
@@ -1817,7 +1821,7 @@ function EncargadaVista(props) {
 
   function getSlotAlumnos(dia, hora, fecha) {
     var dateStr = fecha.toISOString(); var result = [];
-    als.forEach(function (a) { if (a.sede !== sede) return; var matchT1 = a.turno.dia === dia && a.turno.hora === hora; var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora; if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }); else result.push({ alumno: a, tipo: "canceló" }) } (a.ex || []).forEach(function (e) { if (matchDay(e.date, dateStr) && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: e.tipo || "recuperacion" }) }) });
+    als.forEach(function (a) { if (a.sede !== sede) return; var matchT1 = a.turno.dia === dia && a.turno.hora === hora; var matchT2 = a.turno2 && a.turno2.dia === dia && a.turno2.hora === hora; if (matchT1 || matchT2) { var cancelled = (a.canc || []).some(function (c) { return matchDay(c.iso, dateStr) }); if (!cancelled) result.push({ alumno: a, tipo: "fijo" }); else result.push({ alumno: a, tipo: "canceló" }) } (a.ex || []).forEach(function (e) { if (matchSlot(e.date, dateStr, hora) && !result.find(function (r) { return r.alumno.id === a.id })) result.push({ alumno: a, tipo: e.tipo || "recuperacion" }) }) });
     return result;
   }
 
