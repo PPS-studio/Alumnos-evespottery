@@ -48,7 +48,10 @@ var SCHED = {
   "San Isidro": ["lunes-18:00", "martes-09:30", "miércoles-18:30", "jueves-18:30", "sábado-10:00"],
   "Palermo": ["lunes-18:30", "martes-10:00", "martes-14:30", "martes-18:30", "jueves-10:00", "jueves-14:30", "jueves-18:30", "viernes-10:00", "viernes-18:30", "sábado-16:30"]
 };
-var MAX_CUPO = 8; var CLASES_BASE = 4;
+// MAX_FIJAS: cuantas alumnas pueden estar anotadas como fijas en un turno.
+// MAX_CUPO: cuantas personas puede haber en la sala ese dia (fijas presentes + recuperaciones).
+// El asiento de una fija que cancela queda libre para que otra recupere; ademas hay 1 lugar extra.
+var MAX_FIJAS = 8; var MAX_CUPO = 9; var CLASES_BASE = 4;
 var DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 var MN = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 var FERIADOS_2026 = [
@@ -444,6 +447,8 @@ function AdminChat(props) {
       if (!tm) return "No entendí el turno. Ej: martes 14:30";
       var sk = tm[1] + "-" + tm[2];
       if (SCHED[sede2].indexOf(sk) === -1) return "✗ No existe ese horario en " + sede2 + ".\nDisponibles: " + SCHED[sede2].map(function (s) { return s.replace("-", " ") }).join(", ");
+      var fijasEnTurno = als.filter(function (a) { return a.sede === sede2 && a.estado !== "baja" && ((a.turno.dia === tm[1] && a.turno.hora === tm[2]) || (a.turno2 && a.turno2.dia === tm[1] && a.turno2.hora === tm[2])) }).length;
+      if (fijasEnTurno >= MAX_FIJAS) return "✗ No hay lugar: " + tm[1] + " " + tm[2] + " ya tiene " + fijasEnTurno + " alumnas fijas (el máximo es " + MAX_FIJAS + ").\nElegí otro horario o dá de baja a alguna primero.";
       var newPw = genPw("eves");
       var res2 = await supa("alumnos", "POST", "", { nombre: nom3, sede: sede2, turno_dia: tm[1], turno_hora: tm[2], password: newPw, clase_regalo: 0, estado: "activo", pend_arrastre: 0 });
       if (res2) { await refreshData(); return "✓ Alta: " + nom3 + " — " + sede2 + " " + tm[1] + " " + tm[2] + "\nContraseña: " + newPw }
